@@ -1,10 +1,10 @@
 {
-  "projectId": "campusvoice-fee46",
-  "appId": "1:940005113742:web:4b5d54b35504d7c63e2edf",
-  "apiKey": "AIzaSyCyG3L7HaCLI4j4c66uH2cRHqZCygXgmp4",
-  "authDomain": "campusvoice-fee46.firebaseapp.com",
-  "storageBucket": "campusvoice-fee46.firebasestorage.app",
-  "messagingSenderId": "940005113742",
-  "measurementId": "G-1DJHZ1053H",
+  "projectId": "campusvoicenew",
+  "appId": "1:876984275691:web:f16c70088e9265ff82a4ae",
+  "apiKey": "AIzaSyAlcEBfYMHdRgB3EelEHIDzg192qOxzKKA",
+  "authDomain": "campusvoicenew.firebaseapp.com",
+  "storageBucket": "campusvoicenew.firebasestorage.app",
+  "messagingSenderId": "876984275691",
+  "measurementId": "G-E80PK1K5PD",
   "firestoreDatabaseId": "(default)"
 }
