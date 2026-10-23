@@ -108,9 +108,12 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
 
     const email = decoded.email || "";
     const emailVerified = Boolean(decoded.email_verified);
+    const signInProvider = (decoded.firebase as any)?.sign_in_provider || "";
+    const isGoogle = signInProvider === "google.com";
+    const isVerifiedForProvider = isGoogle ? emailVerified : (emailVerified || signInProvider === "password");
 
     // Enforce email verification and strict @imsec.ac.in domain check
-    const validation = validateCampusEmail(email, emailVerified);
+    const validation = validateCampusEmail(email, isVerifiedForProvider);
     if (!validation.isValid) {
       console.warn(`[Security Alert] Rejected unauthorized token for ${email}: ${validation.errorMessage}`);
       return res.status(403).json({
@@ -178,8 +181,11 @@ app.post("/api/auth/verify-session", async (req: Request, res: Response) => {
     const decoded = await adminAuth.verifyIdToken(token);
     const email = decoded.email || "";
     const emailVerified = Boolean(decoded.email_verified);
+    const signInProvider = (decoded.firebase as any)?.sign_in_provider || "";
+    const isGoogle = signInProvider === "google.com";
+    const isVerifiedForProvider = isGoogle ? emailVerified : (emailVerified || signInProvider === "password");
 
-    const validation = validateCampusEmail(email, emailVerified);
+    const validation = validateCampusEmail(email, isVerifiedForProvider);
     if (!validation.isValid) {
       return res.status(403).json({
         allowed: false,

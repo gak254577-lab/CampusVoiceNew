@@ -8,6 +8,10 @@ import {
   onAuthStateChanged, 
   signInWithPopup, 
   signOut, 
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  sendEmailVerification,
   User 
 } from 'firebase/auth';
 import { 
@@ -203,9 +207,10 @@ export default function App() {
       if (user) {
         const rawEmail = user.email || '';
         const isVerified = Boolean(user.emailVerified);
+        const isGoogle = user.providerData.some(p => p.providerId === 'google.com');
 
-        // 1. Mandatory Google email verification check
-        if (!isVerified) {
+        // 1. Mandatory Google email verification check (enforced for Google Auth)
+        if (isGoogle && !isVerified) {
           console.warn(`[Security Alert] Rejected unverified Google account: ${rawEmail}`);
           await signOut(auth);
           setCurrentUser(null);
@@ -222,7 +227,8 @@ export default function App() {
         }
 
         // 2. Strict IMSEC domain validation & lookalike rejection
-        const validation = validateCampusEmail(rawEmail, isVerified);
+        const isVerifiedForDomain = isGoogle ? isVerified : true;
+        const validation = validateCampusEmail(rawEmail, isVerifiedForDomain);
         if (!validation.isValid) {
           console.warn(`[Security Alert] Rejected domain for ${rawEmail}: ${validation.errorMessage}`);
           await signOut(auth);
@@ -491,6 +497,112 @@ export default function App() {
           message: err.message || 'An unexpected error occurred during Google sign in.',
         });
       }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailSignIn = async (emailInput: string, passwordInput: string) => {
+    setAuthLoading(true);
+    setAuthSecurityError(null);
+
+    try {
+      const cleanEmail = emailInput.trim().toLowerCase();
+      const validation = validateCampusEmail(cleanEmail, true);
+      if (!validation.isValid) {
+        setAuthSecurityError({
+          code: validation.errorCode || 'DOMAIN_UNAUTHORIZED',
+          title: 'Institutional Domain Unauthorized',
+          message: validation.errorMessage || `Only official @${INSTITUTIONAL_DOMAIN} accounts are permitted.`,
+          email: cleanEmail
+        });
+        return;
+      }
+
+      await signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
+      localStorage.removeItem('mock_user_session');
+      addToast('Authenticated', 'Welcome back to CampusVoice!', 'success');
+    } catch (err: any) {
+      console.error("Email Sign-In Error:", err);
+      let message = 'Unable to sign in. Please verify your credentials.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        message = 'Invalid email or password. Please verify your credentials or create an account.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        message = 'Email/Password sign-in is not enabled in Firebase Authentication Console. Please enable Email/Password provider.';
+      } else if (err.code === 'auth/too-many-requests') {
+        message = 'Too many failed login attempts. Please try again after a few minutes.';
+      } else if (err.code === 'auth/user-disabled') {
+        message = 'This institutional account has been disabled by an administrator.';
+      } else if (err.message) {
+        message = err.message;
+      }
+
+      setAuthSecurityError({
+        code: err.code || 'SIGNIN_FAILED',
+        title: 'Sign In Failed',
+        message,
+        email: emailInput
+      });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailSignUp = async (emailInput: string, passwordInput: string, nameInput?: string) => {
+    setAuthLoading(true);
+    setAuthSecurityError(null);
+
+    try {
+      const cleanEmail = emailInput.trim().toLowerCase();
+      const validation = validateCampusEmail(cleanEmail, true);
+      if (!validation.isValid) {
+        setAuthSecurityError({
+          code: validation.errorCode || 'DOMAIN_UNAUTHORIZED',
+          title: 'Institutional Domain Unauthorized',
+          message: validation.errorMessage || `Only official @${INSTITUTIONAL_DOMAIN} accounts are permitted.`,
+          email: cleanEmail
+        });
+        return;
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
+      const user = userCredential.user;
+
+      if (nameInput?.trim()) {
+        try {
+          await updateProfile(user, { displayName: nameInput.trim() });
+        } catch (profErr) {
+          console.warn("Could not set displayName on user:", profErr);
+        }
+      }
+
+      try {
+        await sendEmailVerification(user);
+      } catch (verErr) {
+        console.warn("Verification email send deferred:", verErr);
+      }
+
+      localStorage.removeItem('mock_user_session');
+      addToast('Account Created', `Welcome to CampusVoice, ${nameInput || cleanEmail}!`, 'success');
+    } catch (err: any) {
+      console.error("Email Sign-Up Error:", err);
+      let message = 'Failed to create institutional account. Please try again.';
+      if (err.code === 'auth/email-already-in-use') {
+        message = 'An account already exists with this institutional email. Please switch to Sign In.';
+      } else if (err.code === 'auth/weak-password') {
+        message = 'Password is too weak. Please use at least 6 characters.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        message = 'Email/Password registration is not enabled in Firebase Authentication Console. Please enable Email/Password provider.';
+      } else if (err.message) {
+        message = err.message;
+      }
+
+      setAuthSecurityError({
+        code: err.code || 'SIGNUP_FAILED',
+        title: 'Account Creation Failed',
+        message,
+        email: emailInput
+      });
     } finally {
       setAuthLoading(false);
     }
@@ -793,6 +905,8 @@ export default function App() {
         <NotificationToastContainer toasts={toasts} onRemove={removeToast} />
         <LoginPage
           onGoogleLogin={handleGoogleLogin}
+          onEmailSignIn={handleEmailSignIn}
+          onEmailSignUp={handleEmailSignUp}
           loading={authLoading}
           error={authSecurityError}
           onClearError={() => setAuthSecurityError(null)}
