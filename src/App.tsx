@@ -789,23 +789,7 @@ export default function App() {
       {/* Toast Alert System */}
       <NotificationToastContainer toasts={toasts} onRemove={removeToast} />
 
-      {/* Persistent Sandbox Demonstration Warning Banner */}
-      {sessionMode === 'demo' && (
-        <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold flex items-center justify-between border-b border-amber-600/40 z-50 sticky top-0">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">info</span>
-            <span>
-              <strong>SANDBOX DEMO MODE:</strong> You are previewing CampusVoice in an offline simulation. No live Firebase authentication or production records are modified.
-            </span>
-          </div>
-          <button
-            onClick={handleGoogleLogin}
-            className="px-3 py-1 bg-slate-900 text-white rounded text-[11px] font-bold hover:bg-slate-800 transition-colors shrink-0 ml-2"
-          >
-            Sign In with @imsec.ac.in Account
-          </button>
-        </div>
-      )}
+
 
       {/* Institutional Top Masthead */}
       <Header
