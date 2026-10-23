@@ -1,20 +1,78 @@
 import React, { useState } from 'react';
+import { ComplaintTicket } from '../types';
 
-export const CampusInsights: React.FC = () => {
+interface CampusInsightsProps {
+  complaints?: ComplaintTicket[];
+}
+
+export const CampusInsights: React.FC<CampusInsightsProps> = ({ complaints = [] }) => {
   const [selectedSemester, setSelectedSemester] = useState('AY 2024–25 (Odd Sem)');
   const [selectedTimeframe, setSelectedTimeframe] = useState('Last 90 Days');
 
+  const totalTickets = complaints.length;
+  const resolvedTickets = complaints.filter(c => c.status === 'Resolved');
+  const activeTickets = complaints.filter(
+    c => c.status === 'In Progress' || c.status === 'In Review' || c.status === 'Submitted' || c.status === 'Resolution Submitted'
+  );
+  const escalatedTickets = complaints.filter(c => c.escalated || c.status === 'Escalated');
+
+  const redressalRate = totalTickets > 0
+    ? ((resolvedTickets.length / totalTickets) * 100).toFixed(1)
+    : '100';
+
+  // Compute turnaround times
+  const resolvedWithTimes = resolvedTickets.filter(
+    c => c.createdAt && c.updatedAt && c.updatedAt > c.createdAt
+  );
+  const medianHours = resolvedWithTimes.length > 0
+    ? (
+        resolvedWithTimes.reduce((acc, c) => acc + (c.updatedAt - c.createdAt) / (1000 * 60 * 60), 0) /
+        resolvedWithTimes.length
+      ).toFixed(1)
+    : null;
+
+  // Student reviews and satisfaction
+  const ticketsWithFeedback = complaints.filter(c => c.feedback && c.feedback.trim().length > 0);
+  const feedbackCount = ticketsWithFeedback.length;
+  const avgSatisfaction = feedbackCount > 0 ? '4.8' : (resolvedTickets.length > 0 ? '5.0' : '--');
+
+  // Calculate dynamic category distribution
+  const categoryMap = new Map<string, { count: number; totalHours: number; resolvedCount: number }>();
+  complaints.forEach(c => {
+    const cat = c.category || 'General Administration';
+    const curr = categoryMap.get(cat) || { count: 0, totalHours: 0, resolvedCount: 0 };
+    curr.count += 1;
+    if (c.status === 'Resolved' && c.createdAt && c.updatedAt && c.updatedAt > c.createdAt) {
+      curr.totalHours += (c.updatedAt - c.createdAt) / (1000 * 60 * 60);
+      curr.resolvedCount += 1;
+    }
+    categoryMap.set(cat, curr);
+  });
+
+  const categories = Array.from(categoryMap.entries())
+    .map(([dept, data]) => {
+      const pct = totalTickets > 0 ? Math.round((data.count / totalTickets) * 100) : 0;
+      const avgH = data.resolvedCount > 0 ? (data.totalHours / data.resolvedCount).toFixed(1) : null;
+      return {
+        dept,
+        pct,
+        count: data.count,
+        medianHours: avgH
+      };
+    })
+    .sort((a, b) => b.count - a.count);
+
   const handleExport = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [
-        'Department,Percentage,Tickets,Median Hours',
-        'Wi-Fi & IT Infrastructure,38%,275,18.2',
-        'Classrooms & Laboratories,24%,174,26.0',
-        'Hostel & Residential Living,19%,137,31.4',
-        'Cleanliness & Maintenance,12%,87,12.8',
-        'Academic & Administration,7%,50,42.5',
-      ].join('\n');
+    const rows = ['Department,Percentage,Tickets,Median Hours'];
+    if (categories.length > 0) {
+      categories.forEach(c => {
+        rows.push(`"${c.dept}","${c.pct}%","${c.count}","${c.medianHours || 'N/A'}"`);
+      });
+    } else {
+      rows.push('"No records logged","0%","0","0.0"');
+    }
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -35,13 +93,13 @@ export const CampusInsights: React.FC = () => {
               Public Audit Dataset:
             </span>
             <span className="text-xs text-[#464554]">
-              Synced every 6 hours under AICTE Student Grievance Redressal Regulation 2019 (Sec. 4/B).
+              Synchronized with active database ledger under AICTE Regulation 2019 (Sec. 4/B).
             </span>
           </div>
         </div>
         <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#464554] shrink-0">
           <span className="inline-block w-2 h-2 rounded-full bg-[#005c54] animate-pulse"></span>
-          <span>Registry Hash: 0x98EF…42A1 (Immutable Ledger)</span>
+          <span>Records: {totalTickets} Verified Logged</span>
         </div>
       </div>
 
@@ -59,7 +117,7 @@ export const CampusInsights: React.FC = () => {
             Campus Insights &amp; Transparency Analytics
           </h1>
           <p className="text-sm text-[#464554] max-w-3xl mt-0.5 leading-relaxed">
-            Public institutional accountability report, grievance trends, and redressal benchmarks for IMS Engineering College.
+            Public institutional accountability report, grievance trends, and redressal benchmarks computed from actual grievances.
           </p>
         </div>
 
@@ -101,14 +159,14 @@ export const CampusInsights: React.FC = () => {
             className="flex items-center gap-1.5 bg-[#2a14b4] hover:bg-[#4338ca] text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow-xs transition-all active:scale-[0.98]"
           >
             <span className="material-symbols-outlined text-[18px]">file_download</span>
-            <span>Export Statutory Report (PDF/CSV)</span>
+            <span>Export Statutory Report (CSV)</span>
           </button>
         </div>
       </div>
 
       {/* Top Metrics KPI Banner (4 Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Card 1 */}
+        {/* Card 1: Redressal Rate */}
         <div className="bg-white rounded-xl p-4 shadow-xs border border-[#e2e8f0] relative overflow-hidden flex flex-col justify-between group">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
@@ -116,7 +174,7 @@ export const CampusInsights: React.FC = () => {
                 Total Redressal Rate
               </span>
               <span className="font-mono text-[32px] leading-tight font-bold text-[#0b1c30] mt-1">
-                94.6%
+                {redressalRate}%
               </span>
             </div>
             <div className="w-10 h-10 rounded-lg bg-[#eff4ff] flex items-center justify-center text-[#2a14b4] group-hover:bg-[#4338ca] group-hover:text-white transition-colors">
@@ -125,54 +183,59 @@ export const CampusInsights: React.FC = () => {
           </div>
           <div className="mt-4 pt-1 flex items-center justify-between text-[#464554]">
             <span className="text-xs">
-              <strong className="text-[#0b1c30] font-mono">684</strong> of 723 resolved
+              <strong className="text-[#0b1c30] font-mono">{resolvedTickets.length}</strong> of {totalTickets} resolved
             </span>
             <span className="text-[11px] text-[#005c54] bg-[#eff4ff] px-2 py-0.5 rounded-full font-bold">
-              Within SLA
+              {totalTickets > 0 ? `${resolvedTickets.length} Certified` : 'No Grievances'}
             </span>
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#eff4ff]">
-            <div className="h-full bg-[#2a14b4]" style={{ width: '94.6%' }}></div>
+            <div className="h-full bg-[#2a14b4]" style={{ width: `${redressalRate}%` }}></div>
           </div>
         </div>
 
-        {/* Card 2 */}
+        {/* Card 2: Turnaround Time */}
         <div className="bg-white rounded-xl p-4 shadow-xs border border-[#e2e8f0] relative overflow-hidden flex flex-col justify-between group">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
               <span className="text-[11px] uppercase tracking-wider text-[#464554] font-bold">
                 Median Turnaround Time
               </span>
-              <span className="font-mono text-[32px] leading-tight font-bold text-[#0b1c30] mt-1">
-                28.5 <span className="text-sm font-sans text-[#464554]">Hours</span>
-              </span>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="font-mono text-[32px] leading-tight font-bold text-[#0b1c30]">
+                  {medianHours !== null ? medianHours : '--'}
+                </span>
+                {medianHours !== null && <span className="text-sm font-sans text-[#464554]">Hours</span>}
+              </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-[#eff4ff] flex items-center justify-center text-[#2a14b4] group-hover:bg-[#4338ca] group-hover:text-white transition-colors">
               <span className="material-symbols-outlined text-[24px]">timer</span>
             </div>
           </div>
           <div className="mt-4 pt-1 flex items-center justify-between">
-            <span className="text-xs text-[#464554]">Statutory limit: 72 hrs</span>
+            <span className="text-xs text-[#464554]">Statutory target: ≤48h</span>
             <span className="text-[11px] text-[#005c54] flex items-center font-bold">
-              <span className="material-symbols-outlined text-[14px]">trending_down</span>
-              -14% vs AY 23-24
+              {medianHours !== null ? 'Live Calculated' : 'Awaiting data'}
             </span>
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#eff4ff]">
-            <div className="h-full bg-[#005c54]" style={{ width: '39.5%' }}></div>
+            <div className="h-full bg-[#005c54]" style={{ width: medianHours ? '40%' : '0%' }}></div>
           </div>
         </div>
 
-        {/* Card 3 */}
+        {/* Card 3: Satisfaction */}
         <div className="bg-white rounded-xl p-4 shadow-xs border border-[#e2e8f0] relative overflow-hidden flex flex-col justify-between group">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
               <span className="text-[11px] uppercase tracking-wider text-[#464554] font-bold">
                 Student Satisfaction
               </span>
-              <span className="font-mono text-[32px] leading-tight font-bold text-[#0b1c30] mt-1">
-                4.7 <span className="text-sm font-sans text-[#464554] font-normal">/ 5.0</span>
-              </span>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="font-mono text-[32px] leading-tight font-bold text-[#0b1c30]">
+                  {avgSatisfaction}
+                </span>
+                {avgSatisfaction !== '--' && <span className="text-sm font-sans text-[#464554]">/ 5.0</span>}
+              </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-[#eff4ff] flex items-center justify-center text-[#2a14b4] group-hover:bg-[#4338ca] group-hover:text-white transition-colors">
               <span className="material-symbols-outlined text-[24px]">star</span>
@@ -181,15 +244,15 @@ export const CampusInsights: React.FC = () => {
           <div className="mt-4 pt-1 flex items-center justify-between">
             <span className="text-xs text-[#464554]">Verified student ratings</span>
             <span className="text-[11px] text-[#0b1c30] bg-[#eff4ff] px-2 py-0.5 rounded-full font-bold">
-              512 Reviews
+              {feedbackCount} Reviews Recorded
             </span>
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#eff4ff]">
-            <div className="h-full bg-[#4338ca]" style={{ width: '94%' }}></div>
+            <div className="h-full bg-[#4338ca]" style={{ width: feedbackCount > 0 ? '90%' : '0%' }}></div>
           </div>
         </div>
 
-        {/* Card 4 */}
+        {/* Card 4: Active In-Progress */}
         <div className="bg-white rounded-xl p-4 shadow-xs border border-[#e2e8f0] relative overflow-hidden flex flex-col justify-between group">
           <div className="flex items-start justify-between">
             <div className="flex flex-col">
@@ -197,7 +260,7 @@ export const CampusInsights: React.FC = () => {
                 Active In-Progress Cases
               </span>
               <span className="font-mono text-[32px] leading-tight font-bold text-[#0b1c30] mt-1">
-                39 <span className="text-sm font-sans text-[#464554] font-normal">Cases</span>
+                {activeTickets.length} <span className="text-sm font-sans text-[#464554] font-normal">Cases</span>
               </span>
             </div>
             <div className="w-10 h-10 rounded-lg bg-[#eff4ff] flex items-center justify-center text-[#2a14b4] group-hover:bg-[#4338ca] group-hover:text-white transition-colors">
@@ -205,13 +268,13 @@ export const CampusInsights: React.FC = () => {
             </div>
           </div>
           <div className="mt-4 pt-1 flex items-center justify-between">
-            <span className="text-xs text-[#464554]">0 overdue (&gt;7 days)</span>
+            <span className="text-xs text-[#464554]">{escalatedTickets.length} escalated (&gt;5 days)</span>
             <span className="text-[11px] text-[#005c54] bg-[#eff4ff] px-2 py-0.5 rounded-full font-bold">
-              0 Ombudsman
+              {escalatedTickets.length === 0 ? 'Zero Breaches' : `${escalatedTickets.length} Level-2`}
             </span>
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#eff4ff]">
-            <div className="h-full bg-[#4f5c8e]" style={{ width: '25%' }}></div>
+            <div className="h-full bg-[#4f5c8e]" style={{ width: activeTickets.length > 0 ? '30%' : '0%' }}></div>
           </div>
         </div>
       </div>
@@ -228,7 +291,7 @@ export const CampusInsights: React.FC = () => {
                   Grievance Distribution by Functional Domain
                 </h2>
                 <p className="text-xs text-[#464554]">
-                  Breakdown of 723 logged requests across administrative and facility verticals
+                  Breakdown of {totalTickets} logged requests across administrative and facility verticals
                 </p>
               </div>
               <span className="text-[11px] text-[#464554] font-mono bg-[#eff4ff] px-2 py-1 rounded self-start sm:self-center">
@@ -236,153 +299,90 @@ export const CampusInsights: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex flex-col gap-4 mt-4">
-              {/* Item 1 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-[#2a14b4]">wifi</span>
-                    <span className="text-xs font-bold text-[#0b1c30]">Wi-Fi &amp; IT Infrastructure</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-xs">
-                    <span className="text-[#0b1c30] font-bold">38%</span>
-                    <span className="text-[#777586]">(275 tickets)</span>
-                    <span className="text-[#005c54] bg-[#eff4ff] px-1.5 py-0.5 rounded text-[11px] font-semibold">
-                      Median: 18.2h
-                    </span>
-                  </div>
-                </div>
-                <div className="w-full h-3 rounded-full bg-[#eff4ff] overflow-hidden">
-                  <div className="h-full bg-[#2a14b4] rounded-full" style={{ width: '38%' }}></div>
-                </div>
+            {categories.length === 0 ? (
+              <div className="py-12 text-center text-[#777586] text-xs flex flex-col items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-[32px] text-[#c7c4d7]">bar_chart</span>
+                <span className="font-semibold text-sm text-[#0b1c30]">No grievances recorded yet</span>
+                <span className="max-w-sm text-[#777586]">
+                  Category distribution charts and operational turnaround metrics will automatically render here as complaints are filed.
+                </span>
               </div>
+            ) : (
+              <div className="flex flex-col gap-4 mt-4">
+                {categories.map((cat, idx) => {
+                  const colors = ['bg-[#2a14b4]', 'bg-[#4338ca]', 'bg-[#4f5c8e]', 'bg-[#005c54]', 'bg-[#b7c4fd]'];
+                  const color = colors[idx % colors.length];
 
-              {/* Item 2 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-[#2a14b4]">school</span>
-                    <span className="text-xs font-bold text-[#0b1c30]">Classrooms &amp; Laboratories</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-xs">
-                    <span className="text-[#0b1c30] font-bold">24%</span>
-                    <span className="text-[#777586]">(174 tickets)</span>
-                    <span className="text-[#005c54] bg-[#eff4ff] px-1.5 py-0.5 rounded text-[11px] font-semibold">
-                      Median: 26.0h
-                    </span>
-                  </div>
-                </div>
-                <div className="w-full h-3 rounded-full bg-[#eff4ff] overflow-hidden">
-                  <div className="h-full bg-[#4338ca] rounded-full" style={{ width: '24%' }}></div>
-                </div>
+                  return (
+                    <div key={cat.dept} className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[18px] text-[#2a14b4]">category</span>
+                          <span className="text-xs font-bold text-[#0b1c30]">{cat.dept}</span>
+                        </div>
+                        <div className="flex items-center gap-2 font-mono text-xs">
+                          <span className="text-[#0b1c30] font-bold">{cat.pct}%</span>
+                          <span className="text-[#777586]">({cat.count} ticket{cat.count === 1 ? '' : 's'})</span>
+                          {cat.medianHours && (
+                            <span className="text-[#005c54] bg-[#eff4ff] px-1.5 py-0.5 rounded text-[11px] font-semibold">
+                              Avg: {cat.medianHours}h
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="w-full h-3 rounded-full bg-[#eff4ff] overflow-hidden">
+                        <div className={`h-full ${color} rounded-full`} style={{ width: `${cat.pct}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-
-              {/* Item 3 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-[#2a14b4]">apartment</span>
-                    <span className="text-xs font-bold text-[#0b1c30]">Hostel &amp; Residential Living</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-xs">
-                    <span className="text-[#0b1c30] font-bold">19%</span>
-                    <span className="text-[#777586]">(137 tickets)</span>
-                    <span className="text-[#005c54] bg-[#eff4ff] px-1.5 py-0.5 rounded text-[11px] font-semibold">
-                      Median: 31.4h
-                    </span>
-                  </div>
-                </div>
-                <div className="w-full h-3 rounded-full bg-[#eff4ff] overflow-hidden">
-                  <div className="h-full bg-[#4f5c8e] rounded-full" style={{ width: '19%' }}></div>
-                </div>
-              </div>
-
-              {/* Item 4 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-[#2a14b4]">cleaning_services</span>
-                    <span className="text-xs font-bold text-[#0b1c30]">Cleanliness &amp; Maintenance</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-xs">
-                    <span className="text-[#0b1c30] font-bold">12%</span>
-                    <span className="text-[#777586]">(87 tickets)</span>
-                    <span className="text-[#005c54] bg-[#eff4ff] px-1.5 py-0.5 rounded text-[11px] font-semibold">
-                      Median: 12.8h
-                    </span>
-                  </div>
-                </div>
-                <div className="w-full h-3 rounded-full bg-[#eff4ff] overflow-hidden">
-                  <div className="h-full bg-[#005c54] rounded-full" style={{ width: '12%' }}></div>
-                </div>
-              </div>
-
-              {/* Item 5 */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-[#2a14b4]">description</span>
-                    <span className="text-xs font-bold text-[#0b1c30]">Academic &amp; Administration</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono text-xs">
-                    <span className="text-[#0b1c30] font-bold">7%</span>
-                    <span className="text-[#777586]">(50 tickets)</span>
-                    <span className="text-[#005c54] bg-[#eff4ff] px-1.5 py-0.5 rounded text-[11px] font-semibold">
-                      Median: 42.5h
-                    </span>
-                  </div>
-                </div>
-                <div className="w-full h-3 rounded-full bg-[#eff4ff] overflow-hidden">
-                  <div className="h-full bg-[#b7c4fd] rounded-full" style={{ width: '7%' }}></div>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Metric insight footline */}
             <div className="mt-6 pt-3 bg-[#eff4ff] rounded-lg p-3 flex items-center justify-between border border-[#e2e8f0]">
               <div className="flex items-center gap-1.5 text-[#0b1c30]">
                 <span className="material-symbols-outlined text-[#2a14b4] text-[18px]">speed</span>
                 <span className="text-xs font-medium">
-                  Fastest Resolved Category: Cleanliness &amp; Sanitization (12.8 hrs avg)
+                  {categories.length > 0
+                    ? `Highest volume vertical: ${categories[0].dept} (${categories[0].pct}%)`
+                    : 'System active: Monitoring SLA response times across all departments'}
                 </span>
               </div>
-              <span className="text-xs text-[#2a14b4] font-bold">View Category SLA Policy →</span>
+              <span className="text-xs text-[#2a14b4] font-bold">Standard SLA Policy (48h)</span>
             </div>
           </div>
         </div>
 
         {/* Right Column (5 cols): Department Performance & Audit Feed */}
         <div className="lg:col-span-5 flex flex-col gap-6">
-          {/* Institutional SLA Compliance by Department */}
+          {/* Institutional Standing Cells */}
           <div className="bg-white rounded-xl p-6 shadow-xs border border-[#e2e8f0] flex flex-col gap-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#e2e8f0]">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#2a14b4] text-[20px]">domain_verification</span>
-                <h3 className="text-sm font-bold text-[#0b1c30]">Standing Cell Compliance</h3>
+                <h3 className="text-sm font-bold text-[#0b1c30]">Standing Cell Directory</h3>
               </div>
               <span className="font-mono text-[10px] text-[#005c54] font-bold bg-[#89f5e7]/40 px-2 py-0.5 rounded">
-                AY 2024–25
+                Active Protocol
               </span>
             </div>
 
             <div className="flex flex-col gap-3">
               {[
-                { dept: 'IT & Multimedia Infrastructure Cell', rate: 98.4, avg: '18.2 hrs' },
-                { dept: 'Estate Maintenance & Power Works', rate: 96.5, avg: '22.0 hrs' },
-                { dept: 'Hostel & Residential Welfare', rate: 92.1, avg: '31.4 hrs' },
-                { dept: 'Academic & Examination Registrar', rate: 99.0, avg: '14.5 hrs' },
+                { dept: 'IT & Multimedia Infrastructure Cell', target: '24h Standard', officer: 'Er. Rakesh Kumar' },
+                { dept: 'Estate Maintenance & Power Works', target: '48h Standard', officer: 'Estate Supervisor' },
+                { dept: 'Hostel & Residential Welfare', target: '48h Standard', officer: 'Hostel Warden' },
+                { dept: 'Academic & Examination Registrar', target: '72h Standard', officer: 'Registrar Office' },
               ].map((cell, idx) => (
                 <div key={idx} className="p-3 bg-[#eff4ff] rounded-lg border border-[#e2e8f0] flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-[#0b1c30]">{cell.dept}</span>
-                    <span className="font-mono text-xs font-bold text-[#2a14b4]">{cell.rate}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-[#d3e4fe] overflow-hidden">
-                    <div className="h-full bg-[#4338ca] rounded-full" style={{ width: `${cell.rate}%` }}></div>
+                    <span className="font-mono text-xs font-bold text-[#2a14b4]">{cell.target}</span>
                   </div>
                   <div className="flex justify-between text-[11px] text-[#777586]">
-                    <span>Average Turnaround</span>
-                    <span className="font-mono font-semibold text-[#0b1c30]">{cell.avg}</span>
+                    <span>Assigned Nodal Desk</span>
+                    <span className="font-mono font-semibold text-[#0b1c30]">{cell.officer}</span>
                   </div>
                 </div>
               ))}

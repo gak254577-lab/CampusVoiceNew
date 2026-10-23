@@ -15,6 +15,7 @@ interface StaffResolutionDashboardProps {
 }
 
 export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> = ({
+  profile,
   complaints,
   onSelectTicket,
   onSubmitStaffResolution,
@@ -31,18 +32,33 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
     complaints.find(c => c.status === 'In Progress' || c.status === 'Submitted') || complaints[0] || null
   );
 
-  const [interventionNote, setInterventionNote] = useState(
-    'Replaced damaged ceiling-mount access point and configured dual-band 5GHz backhaul. Calibrated signal strength to -52 dBm across 45 nodes.'
-  );
-  const [speedtestData, setSpeedtestData] = useState('112.4 Mbps (0.00% packet loss, 0.8ms jitter)');
+  const [interventionNote, setInterventionNote] = useState('');
+  const [speedtestData, setSpeedtestData] = useState('');
+  const [photoProofUrl, setPhotoProofUrl] = useState<string>('');
   const [isSubmittingResolution, setIsSubmittingResolution] = useState(false);
+
+  // Dynamic KPI counts
+  const assignedQueueCount = complaints.length;
+  const immediateCount = complaints.filter(c => c.severity === 'Urgent' || c.severity === 'High').length;
+  const awaitingCount = complaints.filter(c => c.status === 'Resolution Submitted').length;
+  const resolvedCount = complaints.filter(c => c.status === 'Resolved').length;
+  const escalatedCount = complaints.filter(c => Boolean(c.escalated) || c.status === 'Escalated').length;
+
+  const resolvedWithTimes = complaints.filter(c => c.status === 'Resolved' && c.createdAt && c.updatedAt && c.updatedAt > c.createdAt);
+  const avgTurnaroundHours = resolvedWithTimes.length > 0
+    ? (resolvedWithTimes.reduce((acc, c) => acc + (c.updatedAt - c.createdAt) / (1000 * 60 * 60), 0) / resolvedWithTimes.length).toFixed(1)
+    : null;
+
+  const slaRate = complaints.length > 0
+    ? Math.max(0, Math.round(((complaints.length - escalatedCount) / complaints.length) * 100))
+    : 100;
 
   // Filter complaints
   const filteredQueue = complaints.filter(ticket => {
     if (activeTab === 'immediate' && !(ticket.severity === 'Urgent' || ticket.severity === 'High')) return false;
     if (activeTab === 'awaiting' && ticket.status !== 'Resolution Submitted') return false;
     if (activeTab === 'resolved' && ticket.status !== 'Resolved') return false;
-    if (activeTab === 'escalated' && !ticket.escalated) return false;
+    if (activeTab === 'escalated' && !ticket.escalated && ticket.status !== 'Escalated') return false;
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -70,11 +86,14 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
     try {
       await onSubmitStaffResolution(
         activeActionTicket.id,
-        interventionNote,
-        'https://lh3.googleusercontent.com/aida-public/AB6AXuDsFXK7AHK_zU87UjPXOqa8_y-dnqS6zH1s4K8PZUdj-T_tby0a8Ef7eoFOpIp6QhrepPXuXEHi2qt-5HMIdE6LwRJlpcS4OVN9WDuextcH9Zx6mB8_28D9qCGFHZZueWkoCo0FX09OuazMF-JMYDHEVznVcpjEg8Mp9M0rYZO7LTlGSJXRR1_sLboebFvYKTwvd-uZXNiMNZqQ4CvWuFckub3BhceIrLdQXumkbmR-zlEUKmvGpykU',
-        speedtestData
+        interventionNote.trim(),
+        photoProofUrl.trim() || undefined,
+        speedtestData.trim() || undefined
       );
       alert(`Resolution report submitted for #${activeActionTicket.ticketId}! Complainant has been notified to verify.`);
+      setInterventionNote('');
+      setSpeedtestData('');
+      setPhotoProofUrl('');
     } catch (e) {
       console.error(e);
       alert('Failed to submit resolution.');
@@ -107,18 +126,30 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
               </h1>
               <p className="text-xs text-[#464554] flex items-center gap-1.5 mt-0.5">
                 <span className="material-symbols-outlined text-[16px] text-[#2a14b4]">verified</span>
-                Nodal Officer: <span className="font-bold text-[#0b1c30]">Er. Rakesh Kumar</span>
-                <span className="font-mono text-[11px] text-[#777586]">(EMP-IT-088)</span> • Department of Information Technology • Standing Committee Member
+                Nodal Officer: <span className="font-bold text-[#0b1c30]">{profile?.name || 'Er. Rakesh Kumar'}</span>
+                <span className="font-mono text-[11px] text-[#777586]">({profile?.rollNumber || 'EMP-IT-088'})</span> • Department of Information Technology • Standing Committee Member
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3 self-stretch xl:self-auto justify-end">
-            <div className="flex items-center gap-2 bg-[#ffdad6]/40 border border-[#ba1a1a]/20 px-3 py-1.5 rounded-lg">
-              <span className="material-symbols-outlined text-[#ba1a1a] text-[20px]">warning</span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
+              immediateCount > 0
+                ? 'bg-[#ffdad6]/40 border-[#ba1a1a]/20 text-[#ba1a1a]'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            }`}>
+              <span className="material-symbols-outlined text-[20px]">
+                {immediateCount > 0 ? 'warning' : 'verified'}
+              </span>
               <div className="flex flex-col text-left">
-                <span className="text-[10px] text-[#ba1a1a] font-bold uppercase tracking-wide">Action Alert</span>
-                <span className="text-xs text-[#93000a] font-semibold">1 Grievance pending SLA breach (&lt; 2h left)</span>
+                <span className="text-[10px] font-bold uppercase tracking-wide">
+                  {immediateCount > 0 ? 'Action Alert' : 'SLA Status'}
+                </span>
+                <span className="text-xs font-semibold">
+                  {immediateCount > 0
+                    ? `${immediateCount} urgent docket(s) requiring priority dispatch`
+                    : 'All active queue dockets within SLA target'}
+                </span>
               </div>
             </div>
             <button
@@ -143,52 +174,60 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-mono text-3xl font-bold text-[#0b1c30]">14</span>
+            <span className="font-mono text-3xl font-bold text-[#0b1c30]">{assignedQueueCount}</span>
             <span className="text-xs text-[#464554]">Active Dockets</span>
           </div>
           <div className="flex items-center justify-between mt-3 pt-2 bg-[#eff4ff] px-2.5 py-1 rounded">
             <span className="text-xs text-[#2a14b4] font-semibold flex items-center gap-0.5">
-              <span className="material-symbols-outlined text-[14px]">trending_up</span> +2 from yesterday
+              <span className="material-symbols-outlined text-[14px]">dynamic_feed</span> Real-time Sync
             </span>
-            <span className="font-mono text-[11px] text-[#777586]">Queue Load: 68%</span>
+            <span className="font-mono text-[11px] text-[#777586]">Queue: {assignedQueueCount}</span>
           </div>
         </div>
 
         {/* Card 2 */}
         <div className="bg-white p-4 rounded-xl shadow-xs border border-[#e2e8f0] flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-[#464554] uppercase tracking-wider">Action Required</span>
+            <span className="text-xs font-bold text-[#464554] uppercase tracking-wider">Priority Attention</span>
             <span className="p-1.5 rounded-lg bg-[#ffdad6]/40 text-[#ba1a1a]">
               <span className="material-symbols-outlined text-[18px]">assignment_late</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-mono text-3xl font-bold text-[#ba1a1a]">03</span>
-            <span className="text-xs text-[#464554]">Unassigned Dockets</span>
+            <span className="font-mono text-3xl font-bold text-[#ba1a1a]">
+              {String(immediateCount).padStart(2, '0')}
+            </span>
+            <span className="text-xs text-[#464554]">Urgent / High</span>
           </div>
           <div className="flex items-center justify-between mt-3 pt-2 bg-[#eff4ff] px-2.5 py-1 rounded">
-            <span className="text-xs text-[#ba1a1a] font-bold">Immediate Inspection</span>
-            <span className="font-mono text-[11px] text-[#777586]">Max Age: 4h 10m</span>
+            <span className="text-xs text-[#ba1a1a] font-bold">Priority Triage</span>
+            <span className="font-mono text-[11px] text-[#777586]">
+              {immediateCount > 0 ? 'Requires action' : 'Zero urgent'}
+            </span>
           </div>
         </div>
 
         {/* Card 3 */}
         <div className="bg-white p-4 rounded-xl shadow-xs border border-[#e2e8f0] flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-[#464554] uppercase tracking-wider">Student Sign-off</span>
+            <span className="text-xs font-bold text-[#464554] uppercase tracking-wider">Student Verification</span>
             <span className="p-1.5 rounded-lg bg-[#eff4ff] text-[#4f5c8e]">
               <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="font-mono text-3xl font-bold text-[#0b1c30]">04</span>
-            <span className="text-xs text-[#464554]">Pending Review</span>
+            <span className="font-mono text-3xl font-bold text-[#0b1c30]">
+              {String(awaitingCount).padStart(2, '0')}
+            </span>
+            <span className="text-xs text-[#464554]">Awaiting Sign-off</span>
           </div>
           <div className="flex items-center justify-between mt-3 pt-2 bg-[#eff4ff] px-2.5 py-1 rounded">
             <span className="text-xs text-[#4f5c8e] font-semibold flex items-center gap-1">
-              <span className="material-symbols-outlined text-[14px]">hourglass_top</span> Auto-close in 48h
+              <span className="material-symbols-outlined text-[14px]">hourglass_top</span> Student Review
             </span>
-            <span className="font-mono text-[11px] text-[#777586]">Avg: 11h ago</span>
+            <span className="font-mono text-[11px] text-[#777586]">
+              {awaitingCount} Submitted
+            </span>
           </div>
         </div>
 
@@ -203,18 +242,20 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
           <div className="flex items-center justify-between mt-2">
             <div>
               <div className="flex items-baseline gap-1">
-                <span className="font-mono text-3xl font-bold text-[#0b1c30]">98.2</span>
+                <span className="font-mono text-3xl font-bold text-[#0b1c30]">{slaRate}</span>
                 <span className="text-sm font-bold text-[#464554]">%</span>
               </div>
-              <span className="text-xs text-[#005c54] font-bold">Turnaround: 26.4 hrs</span>
+              <span className="text-xs text-[#005c54] font-bold">
+                {avgTurnaroundHours ? `Avg: ${avgTurnaroundHours} hrs` : 'Target: ≤48h'}
+              </span>
             </div>
             {/* Inline radial SVG gauge */}
             <div className="relative w-12 h-12 flex items-center justify-center">
               <svg className="w-12 h-12 transform -rotate-90" viewBox="0 0 36 36">
                 <path className="text-[#eff4ff]" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3.5" />
-                <path className="text-[#2a14b4]" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeDasharray="98.2, 100" strokeLinecap="round" strokeWidth="3.5" />
+                <path className="text-[#2a14b4]" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeDasharray={`${slaRate}, 100`} strokeLinecap="round" strokeWidth="3.5" />
               </svg>
-              <span className="absolute font-mono text-[9px] text-[#2a14b4] font-bold">48h Std</span>
+              <span className="absolute font-mono text-[9px] text-[#2a14b4] font-bold">SLA</span>
             </div>
           </div>
           <div className="flex items-center justify-between mt-2 pt-2 bg-[#eff4ff] px-2.5 py-1 rounded">
@@ -229,11 +270,11 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
         {/* Tabs */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 bg-[#eff4ff] p-1 rounded-lg">
           {[
-            { id: 'all', label: 'All Assigned', count: complaints.length },
-            { id: 'immediate', label: 'Immediate Action', count: 3, alert: true },
-            { id: 'awaiting', label: 'Awaiting Student Verification', count: 4 },
-            { id: 'resolved', label: 'Resolved & Audited', count: 62 },
-            { id: 'escalated', label: 'Escalated (Dean Office)', count: 1, critical: true }
+            { id: 'all', label: 'All Assigned', count: assignedQueueCount },
+            { id: 'immediate', label: 'Immediate Action', count: immediateCount, alert: immediateCount > 0 },
+            { id: 'awaiting', label: 'Awaiting Student Verification', count: awaitingCount },
+            { id: 'resolved', label: 'Resolved & Audited', count: resolvedCount },
+            { id: 'escalated', label: 'Escalated (Dean Office)', count: escalatedCount, critical: escalatedCount > 0 }
           ].map(tab => (
             <button
               key={tab.id}
@@ -347,63 +388,74 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e2e8f0]">
-                {filteredQueue.map(t => {
-                  const isSelected = activeActionTicket?.id === t.id;
-                  const isUrgent = t.severity === 'Urgent';
+                {filteredQueue.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center text-[#777586]">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <span className="material-symbols-outlined text-[28px] text-[#c7c4d7]">inbox</span>
+                        <span>No grievance records matching this queue filter.</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredQueue.map(t => {
+                    const isSelected = activeActionTicket?.id === t.id;
+                    const isUrgent = t.severity === 'Urgent';
 
-                  return (
-                    <tr
-                      key={t.id}
-                      onClick={() => setActiveActionTicket(t)}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected ? 'bg-[#dce9ff]/60' : isUrgent ? 'bg-[#ffdad6]/15 hover:bg-[#ffdad6]/25' : 'hover:bg-[#eff4ff]/60'
-                      }`}
-                    >
-                      <td className="py-2.5 px-3 align-top whitespace-nowrap">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-[#2a14b4]">#{t.ticketId}</span>
-                            {isUrgent && (
-                              <span className="bg-[#ba1a1a] text-white text-[9px] px-1 py-0.2 rounded font-bold uppercase">
-                                Urgent
-                              </span>
-                            )}
+                    return (
+                      <tr
+                        key={t.id}
+                        onClick={() => setActiveActionTicket(t)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected ? 'bg-[#dce9ff]/60' : isUrgent ? 'bg-[#ffdad6]/15 hover:bg-[#ffdad6]/25' : 'hover:bg-[#eff4ff]/60'
+                        }`}
+                      >
+                        <td className="py-2.5 px-3 align-top whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-[#2a14b4]">#{t.ticketId}</span>
+                              {isUrgent && (
+                                <span className="bg-[#ba1a1a] text-white text-[9px] px-1 py-0.2 rounded font-bold uppercase">
+                                  Urgent
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-bold text-[#0b1c30] mt-0.5">
+                              {t.studentName || 'Student Complainant'}
+                            </span>
+                            <span className="font-mono text-[10px] text-[#777586]">
+                              {t.studentRoll || 'N/A'}
+                            </span>
                           </div>
-                          <span className="font-bold text-[#0b1c30] mt-0.5">
-                            {t.studentName || 'Aanya Sharma'}
+                        </td>
+                        <td className="py-2.5 px-3 align-top">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-[#0b1c30] line-clamp-1">{t.title}</span>
+                            <span className="text-[11px] text-[#777586] mt-0.5">
+                              {t.building || 'Campus Facility'} {t.room ? `• ${t.room}` : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 align-top whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#eff4ff] text-[#2a14b4] border border-[#d3e4fe]">
+                            {t.status}
                           </span>
-                          <span className="font-mono text-[10px] text-[#777586]">
-                            {t.studentRoll || '2101430100042'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 align-top">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-[#0b1c30] line-clamp-1">{t.title}</span>
-                          <span className="text-[11px] text-[#777586] mt-0.5">
-                            {t.building || 'Block A'} {t.room ? `• ${t.room}` : ''}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 align-top whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#eff4ff] text-[#2a14b4] border border-[#d3e4fe]">
-                          {t.status}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 align-top text-right">
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            onSelectTicket(t);
-                          }}
-                          className="px-2 py-1 bg-[#eff4ff] hover:bg-[#e5eeff] text-[#2a14b4] rounded text-[11px] font-bold border border-[#e2e8f0]"
-                        >
-                          Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="py-2.5 px-3 align-top text-right">
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              onSelectTicket(t);
+                            }}
+                            className="px-2 py-1 bg-[#eff4ff] hover:bg-[#e5eeff] text-[#2a14b4] rounded text-[11px] font-bold border border-[#e2e8f0]"
+                          >
+                            Details
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -428,10 +480,10 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
               <div className="p-3 bg-[#eff4ff] rounded-lg border border-[#e2e8f0] flex flex-col gap-1">
                 <span className="text-xs font-bold text-[#0b1c30]">{activeActionTicket.title}</span>
                 <span className="text-[11px] text-[#464554]">
-                  Complainant: <strong className="text-[#0b1c30]">{activeActionTicket.studentName || 'Aanya Sharma'}</strong> ({activeActionTicket.studentRoll || '2101430100042'})
+                  Complainant: <strong className="text-[#0b1c30]">{activeActionTicket.studentName || 'Student Complainant'}</strong> ({activeActionTicket.studentRoll || 'N/A'})
                 </span>
                 <span className="text-[11px] text-[#777586]">
-                  Location: {activeActionTicket.building || 'Block A'} • {activeActionTicket.room || 'Lab 204'}
+                  Location: {activeActionTicket.building || 'Campus Facility'}{activeActionTicket.room ? ` • ${activeActionTicket.room}` : ''}
                 </span>
               </div>
 
@@ -458,33 +510,29 @@ export const StaffResolutionDashboard: React.FC<StaffResolutionDashboardProps> =
                   type="text"
                   value={speedtestData}
                   onChange={e => setSpeedtestData(e.target.value)}
-                  placeholder="e.g., 112.4 Mbps (0.00% packet loss, 0.8ms jitter)"
+                  placeholder="e.g., Signal calibrated at -52 dBm across 45 nodes, 112 Mbps verified"
                   className="w-full bg-[#eff4ff]/40 px-3 py-2 rounded-lg text-xs text-[#0b1c30] border border-[#e2e8f0] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#4338ca]"
                 />
               </div>
 
-              {/* Hardware Photo Preview */}
-              <div className="p-3 bg-[#eff4ff] rounded-lg border border-[#e2e8f0] flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded bg-[#d3e4fe] flex items-center justify-center shrink-0 overflow-hidden">
-                    <img
-                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuDsFXK7AHK_zU87UjPXOqa8_y-dnqS6zH1s4K8PZUdj-T_tby0a8Ef7eoFOpIp6QhrepPXuXEHi2qt-5HMIdE6LwRJlpcS4OVN9WDuextcH9Zx6mB8_28D9qCGFHZZueWkoCo0FX09OuazMF-JMYDHEVznVcpjEg8Mp9M0rYZO7LTlGSJXRR1_sLboebFvYKTwvd-uZXNiMNZqQ4CvWuFckub3BhceIrLdQXumkbmR-zlEUKmvGpykU"
-                      alt="Hardware"
-                      className="w-full h-full object-cover"
-                    />
+              {/* Photographic Evidence Attachment */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-[#0b1c30]">
+                  Photographic Evidence URL (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={photoProofUrl}
+                  onChange={e => setPhotoProofUrl(e.target.value)}
+                  placeholder="https://... photo link of completed repair"
+                  className="w-full bg-[#eff4ff]/40 px-3 py-2 rounded-lg text-xs text-[#0b1c30] border border-[#e2e8f0] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#4338ca]"
+                />
+                {photoProofUrl && (
+                  <div className="mt-1 p-2 rounded bg-[#eff4ff] border border-[#e2e8f0] flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#005c54] text-[18px]">image</span>
+                    <span className="text-[11px] text-[#0b1c30] truncate">{photoProofUrl}</span>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-[#0b1c30]">CAM-PROOF-01.jpg</span>
-                    <span className="text-[10px] text-[#005c54] font-semibold">✓ Geofence Verified</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => alert('New photographic capture simulation activated.')}
-                  className="px-2.5 py-1 text-xs bg-white text-[#2a14b4] rounded border border-[#c7c4d7]/60 font-semibold hover:bg-[#eff4ff]"
-                >
-                  Change
-                </button>
+                )}
               </div>
 
               <button

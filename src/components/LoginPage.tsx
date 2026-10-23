@@ -228,7 +228,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       disabled={loading}
-                      placeholder="e.g. Aanya Sharma"
+                      placeholder="Enter your full name"
                       className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#f8f9ff] border border-[#c7c4d7]/60 rounded-xl focus:outline-none focus:border-[#4338ca] focus:bg-white focus:ring-1 focus:ring-[#4338ca] transition-all disabled:opacity-60 text-[#0b1c30] placeholder:text-[#777586]/70"
                     />
                   </div>

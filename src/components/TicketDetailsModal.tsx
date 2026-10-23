@@ -18,14 +18,14 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 }) => {
   if (!ticket) return null;
 
-  const [rating, setRating] = useState<number>(5);
-  const [concurrence, setConcurrence] = useState(true);
-  const [feedback, setFeedback] = useState('Tested in CS Lab 204 during practical hours. Signal is stable at ~110 Mbps. Thanks for the quick replacement!');
+  const [rating, setRating] = useState<number>(ticket.rating || 5);
+  const [concurrence, setConcurrence] = useState(false);
+  const [feedback, setFeedback] = useState(ticket.feedback || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
 
-  const studentName = profile?.name || 'Aanya Sharma';
-  const rollNumber = profile?.rollNumber || '2101430100042';
+  const studentName = profile?.name || (profile?.email ? profile.email.split('@')[0] : 'Student');
+  const rollNumber = profile?.rollNumber || '';
 
   const isResolved = ticket.status === 'Resolved';
   const isVerificationRequired = ticket.status === 'Resolution Submitted';
@@ -217,124 +217,86 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Evidence Gallery: Photo + Telemetry SVG Chart */}
-                  <div className="flex flex-col gap-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] uppercase font-bold tracking-wider text-[#464554]">
-                        Verified Photographic &amp; Telemetry Evidence
-                      </span>
-                      <span className="font-mono text-[11px] text-[#005c54] font-semibold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">lock</span> SHA-256 Hash Verified
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Proof 1: Hardware Photo */}
-                      <div className="rounded-xl bg-[#eff4ff] overflow-hidden border border-[#e2e8f0] flex flex-col">
-                        <div className="relative h-44 w-full bg-[#cbdbf5] overflow-hidden">
-                          <img
-                            alt="Hardware replacement"
-                            src={ticket.resolutionProof?.photoProofUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDsFXK7AHK_zU87UjPXOqa8_y-dnqS6zH1s4K8PZUdj-T_tby0a8Ef7eoFOpIp6QhrepPXuXEHi2qt-5HMIdE6LwRJlpcS4OVN9WDuextcH9Zx6mB8_28D9qCGFHZZueWkoCo0FX09OuazMF-JMYDHEVznVcpjEg8Mp9M0rYZO7LTlGSJXRR1_sLboebFvYKTwvd-uZXNiMNZqQ4CvWuFckub3BhceIrLdQXumkbmR-zlEUKmvGpykU'}
-                            className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                          />
-                          <div className="absolute top-2 left-2 bg-[#0b1c30]/85 text-white font-mono text-[10px] px-2 py-0.5 rounded flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[13px] text-[#89f5e7]">sensors</span>
-                            CAM-PROOF-01
-                          </div>
-                          <button
-                            onClick={() => window.open(ticket.resolutionProof?.photoProofUrl || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDsFXK7AHK_zU87UjPXOqa8_y-dnqS6zH1s4K8PZUdj-T_tby0a8Ef7eoFOpIp6QhrepPXuXEHi2qt-5HMIdE6LwRJlpcS4OVN9WDuextcH9Zx6mB8_28D9qCGFHZZueWkoCo0FX09OuazMF-JMYDHEVznVcpjEg8Mp9M0rYZO7LTlGSJXRR1_sLboebFvYKTwvd-uZXNiMNZqQ4CvWuFckub3BhceIrLdQXumkbmR-zlEUKmvGpykU', '_blank')}
-                            className="absolute bottom-2 right-2 bg-white/90 hover:bg-white text-[#0b1c30] text-[11px] font-semibold px-2 py-1 rounded shadow-xs flex items-center gap-1 transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">zoom_in</span>
-                            <span>View Full Resolution</span>
-                          </button>
-                        </div>
-                        <div className="p-3 flex flex-col gap-1">
-                          <span className="text-xs font-bold text-[#0b1c30]">
-                            Installed Aruba AP-515 ceiling mount in Lab 204
-                          </span>
-                          <span className="text-[11px] text-[#464554]">
-                            Active Gigabit Link verified via Rack-02 PoE+ switch port 18.
-                          </span>
-                          <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-[#777586]">
-                            <span>GPS: 28.6732° N, 77.4411° E</span>
-                            <span className="text-[#005c54] font-semibold">✓ Geofence Matched</span>
-                          </div>
-                        </div>
+                  {/* Evidence Gallery: Real Photo + Real Telemetry */}
+                  {ticket.resolutionProof ? (
+                    <div className="flex flex-col gap-4 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] uppercase font-bold tracking-wider text-[#464554]">
+                          Verified Technical Evidence
+                        </span>
+                        <span className="font-mono text-[11px] text-[#005c54] font-semibold flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px]">lock</span> Official Audit Record
+                        </span>
                       </div>
 
-                      {/* Proof 2: Speedtest Telemetry SVG Benchmark */}
-                      <div className="rounded-xl bg-[#213145] overflow-hidden border border-[#0b1c30] flex flex-col p-3.5 text-[#eaf1ff] justify-between">
-                        <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px] text-[#89f5e7]">speed</span>
-                            <span className="font-mono text-xs font-bold text-[#89f5e7]">
-                              Iperf3 &amp; Ookla Telemetry Benchmark
-                            </span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {ticket.resolutionProof.photoProofUrl && (
+                          <div className="rounded-xl bg-[#eff4ff] overflow-hidden border border-[#e2e8f0] flex flex-col">
+                            <div className="relative h-48 w-full bg-[#cbdbf5] overflow-hidden">
+                              <img
+                                alt="Resolution Evidence"
+                                src={ticket.resolutionProof.photoProofUrl}
+                                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute top-2 left-2 bg-[#0b1c30]/85 text-white font-mono text-[10px] px-2 py-0.5 rounded flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[13px] text-[#89f5e7]">check_circle</span>
+                                Resolution Evidence
+                              </div>
+                              <button
+                                onClick={() => window.open(ticket.resolutionProof?.photoProofUrl, '_blank')}
+                                className="absolute bottom-2 right-2 bg-white/90 hover:bg-white text-[#0b1c30] text-[11px] font-semibold px-2 py-1 rounded shadow-xs flex items-center gap-1 transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">zoom_in</span>
+                                <span>View Full Photo</span>
+                              </button>
+                            </div>
+                            <div className="p-3 flex flex-col gap-1">
+                              <span className="text-xs font-bold text-[#0b1c30]">
+                                Photographic Verification
+                              </span>
+                              <span className="text-[11px] text-[#464554]">
+                                Uploaded by {ticket.resolutionProof.officerName || ticket.designatedOfficer || 'Assigned Officer'}
+                              </span>
+                            </div>
                           </div>
-                          <span className="font-mono text-[10px] text-white/60">LAB-CS-CLIENT-42</span>
-                        </div>
+                        )}
 
-                        {/* Inline Throughput Sparkline SVG */}
-                        <div className="relative w-full h-24 my-2 flex flex-col justify-end">
-                          <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 300 80">
-                            <defs>
-                              <linearGradient id="modalGradient" x1="0" x2="0" y1="0" y2="1">
-                                <stop offset="0%" stopColor="#89f5e7" stopOpacity="0.4" />
-                                <stop offset="100%" stopColor="#89f5e7" stopOpacity="0.0" />
-                              </linearGradient>
-                            </defs>
-                            <line stroke="#464554" strokeDasharray="2 2" strokeOpacity="0.5" x1="0" x2="300" y1="20" y2="20" />
-                            <line stroke="#464554" strokeDasharray="2 2" strokeOpacity="0.5" x1="0" x2="300" y1="50" y2="50" />
-                            <path d="M0,75 L20,70 L40,68 L60,45 L80,25 L100,22 L140,20 L180,24 L220,18 L260,20 L300,19 L300,80 L0,80 Z" fill="url(#modalGradient)" />
-                            <path d="M0,75 L20,70 L40,68 L60,45 L80,25 L100,22 L140,20 L180,24 L220,18 L260,20 L300,19" fill="none" stroke="#6bd8cb" strokeLinecap="round" strokeWidth="2.5" />
-                            <circle cx="220" cy="18" fill="#ffffff" r="4" stroke="#005c54" strokeWidth="2" />
-                          </svg>
-                          <div className="flex justify-between items-center text-[10px] font-mono text-white/60 mt-1">
-                            <span>00:00 (Pre-Fix 4Mbps)</span>
-                            <span className="text-[#89f5e7] font-bold">112.4 Mbps (Post Replacement)</span>
+                        {ticket.resolutionProof.speedtestAfter && (
+                          <div className="rounded-xl bg-[#213145] overflow-hidden border border-[#0b1c30] flex flex-col p-4 text-[#eaf1ff] justify-between">
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[16px] text-[#89f5e7]">speed</span>
+                                <span className="font-mono text-xs font-bold text-[#89f5e7]">
+                                  Telemetry &amp; Inspection Data
+                                </span>
+                              </div>
+                              <span className="font-mono text-[10px] text-white/60">#{ticket.ticketId}</span>
+                            </div>
+
+                            <div className="my-4">
+                              <span className="text-xs text-white/70 block mb-1">Measured Metric / Result:</span>
+                              <span className="font-mono text-lg font-bold text-[#89f5e7] bg-white/5 px-3 py-1.5 rounded block">
+                                {ticket.resolutionProof.speedtestAfter}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-white/10 text-white/70">
+                              <span>Timestamp: {ticket.resolutionProof.interventionTimestamp || 'Recorded'}</span>
+                              <span className="text-[#89f5e7]">✓ Verified</span>
+                            </div>
                           </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px] font-mono pt-1.5 border-t border-white/10">
-                          <span className="text-[#89f5e7]">Packet Loss: 0.00%</span>
-                          <span className="text-white/80">Jitter: 0.8ms</span>
-                        </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Attached Diagnostics Files */}
-                  <div className="flex flex-col gap-2 pt-2 border-t border-[#e2e8f0]">
-                    <span className="text-[11px] uppercase font-bold tracking-wider text-[#464554]">
-                      Attached Technical Diagnostics &amp; Audit Logs
-                    </span>
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        onClick={() => alert('Downloading AP_diagnostics_oct24.pdf (1.2 MB)')}
-                        className="flex items-center gap-2.5 bg-[#eff4ff] hover:bg-[#e5eeff] px-3 py-2 rounded-lg text-[#0b1c30] transition-colors border border-[#e2e8f0] text-left"
-                      >
-                        <span className="material-symbols-outlined text-[#ba1a1a] text-[20px]">picture_as_pdf</span>
-                        <div className="flex flex-col">
-                          <span className="font-mono text-xs font-bold">AP_diagnostics_oct24.pdf</span>
-                          <span className="text-[10px] text-[#777586]">1.2 MB • Aruba OS Log Export</span>
-                        </div>
-                        <span className="material-symbols-outlined text-[16px] text-[#777586] ml-2">download</span>
-                      </button>
-
-                      <button
-                        onClick={() => alert('Downloading ping_test_lab204.csv (42 KB)')}
-                        className="flex items-center gap-2.5 bg-[#eff4ff] hover:bg-[#e5eeff] px-3 py-2 rounded-lg text-[#0b1c30] transition-colors border border-[#e2e8f0] text-left"
-                      >
-                        <span className="material-symbols-outlined text-[#005c54] text-[20px]">table_view</span>
-                        <div className="flex flex-col">
-                          <span className="font-mono text-xs font-bold">ping_test_lab204.csv</span>
-                          <span className="text-[10px] text-[#777586]">42 KB • 1,500 ICMP Samples</span>
-                        </div>
-                        <span className="material-symbols-outlined text-[16px] text-[#777586] ml-2">download</span>
-                      </button>
+                  ) : (
+                    <div className="py-8 text-center text-xs text-[#777586] flex flex-col items-center justify-center gap-2 bg-[#eff4ff]/40 rounded-xl border border-dashed border-[#c7c4d7]/60">
+                      <span className="material-symbols-outlined text-[32px] text-[#4f5c8e]/60">pending_actions</span>
+                      <p className="font-bold text-sm text-[#0b1c30]">No Resolution Proof Submitted Yet</p>
+                      <p className="text-xs text-[#464554] max-w-md">
+                        The assigned administrative cell has not yet uploaded formal completion evidence. Photographic proof and inspection metrics will appear here once submitted.
+                      </p>
                     </div>
-                  </div>
+                  )}
                 </div>
               </section>
 
@@ -355,7 +317,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                     </div>
                   </div>
                   <span className="font-mono text-[11px] bg-[#dce1ff] text-[#071747] font-bold px-2 py-0.5 rounded">
-                    {studentName} ({rollNumber})
+                    {studentName} {rollNumber ? `(${rollNumber})` : ''}
                   </span>
                 </div>
 
@@ -365,6 +327,11 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                     <div>
                       <strong className="block text-sm">Grievance Formally Certified &amp; Closed</strong>
                       <span>Verified by complainant with {rating}-star rating. Audit archived into institutional ledger.</span>
+                      {ticket.feedback && (
+                        <p className="mt-1 text-emerald-800 italic font-sans bg-emerald-100/60 p-2 rounded">
+                          "{ticket.feedback}"
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -373,7 +340,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                     <div className="bg-[#eff4ff] p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#e2e8f0]">
                       <div>
                         <label className="text-sm font-bold text-[#0b1c30] block">
-                          Has your grievance been satisfactorily resolved in Lab 204?
+                          Has your grievance regarding "{ticket.title}" been satisfactorily resolved?
                         </label>
                         <span className="text-xs text-[#464554]">
                           Your certification formally archives this complaint in the institutional registry.
@@ -414,7 +381,7 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                         className="mt-0.5 w-4 h-4 text-[#4338ca] rounded focus:ring-[#4338ca] accent-[#4338ca]"
                       />
                       <span className="text-xs text-[#0b1c30] leading-relaxed">
-                        I confirm that the service disruption in Lab 204 has been physically resolved, and I have tested network connectivity on campus terminal systems.
+                        I confirm that the issue reported in this grievance has been inspected and resolved to my satisfaction.
                       </span>
                     </label>
 

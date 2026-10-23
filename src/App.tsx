@@ -176,7 +176,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Data Collections
-  const [complaints, setComplaints] = useState<ComplaintTicket[]>(INITIAL_STITCH_COMPLAINTS);
+  const [complaints, setComplaints] = useState<ComplaintTicket[]>([]);
   const [notifications, setNotifications] = useState<PushNotificationMessage[]>([]);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
 
@@ -307,10 +307,10 @@ export default function App() {
               email: validation.normalizedEmail,
               photoURL: user.photoURL || undefined,
               role: serverVerifiedRole,
-              rollNumber: serverVerifiedRole === 'admin' ? 'EMP-NODAL-088' : '2101430100042',
-              branch: serverVerifiedRole === 'admin' ? 'Information Technology Cell' : 'Computer Science & Engineering',
-              year: serverVerifiedRole === 'admin' ? 'Senior Nodal Officer' : '4th Year',
-              hostelBlock: 'Campus Resident',
+              rollNumber: serverVerifiedRole === 'admin' ? 'EMP-NODAL-088' : '',
+              branch: serverVerifiedRole === 'admin' ? 'Information Technology Cell' : '',
+              year: serverVerifiedRole === 'admin' ? 'Senior Nodal Officer' : '',
+              hostelBlock: '',
               createdAt: Date.now()
             };
             await setDoc(userDocRef, newProfile);
@@ -324,7 +324,7 @@ export default function App() {
             email: validation.normalizedEmail,
             photoURL: user.photoURL || undefined,
             role: serverVerifiedRole,
-            rollNumber: serverVerifiedRole === 'admin' ? 'EMP-NODAL-088' : '2101430100042',
+            rollNumber: serverVerifiedRole === 'admin' ? 'EMP-NODAL-088' : '',
             createdAt: Date.now()
           };
           setProfile(fallbackProfile);
@@ -390,7 +390,7 @@ export default function App() {
         return;
       }
 
-      // Real authenticated mode: Fetch from Firestore
+      // Real authenticated mode: Fetch genuine records from Firestore
       try {
         const cRef = collection(db, 'complaints');
         const qSnap = await getDocs(cRef);
@@ -402,20 +402,12 @@ export default function App() {
           list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           setComplaints(list);
         } else {
-          // Seed initial tickets if collection is brand new
-          for (const ticket of INITIAL_STITCH_COMPLAINTS) {
-            await setDoc(doc(db, 'complaints', ticket.id), ticket);
-          }
-          setComplaints(INITIAL_STITCH_COMPLAINTS);
+          // Zero grievances found in real database -> Clean empty state
+          setComplaints([]);
         }
       } catch (err) {
-        console.warn("Firestore complaints fetch deferred, using cached roster:", err);
-        const stored = localStorage.getItem('stitch_complaints');
-        if (stored) {
-          setComplaints(JSON.parse(stored));
-        } else {
-          setComplaints(INITIAL_STITCH_COMPLAINTS);
-        }
+        console.warn("Firestore complaints fetch error:", err);
+        setComplaints([]);
       }
     };
 
@@ -423,23 +415,25 @@ export default function App() {
   }, [currentUser, sessionMode]);
 
   // -------------------------------------------------------------
-  // Filtered Complaint Access (Requirement 7: Privacy Enforcement)
+  // Filtered Complaint Access (Requirement 6 & 10: Privacy Enforcement)
   // -------------------------------------------------------------
   const isStaff = profile?.role === 'admin' || (sessionMode === 'demo' && isForcedAdmin);
 
   const permittedComplaints = useMemo(() => {
-    if (sessionMode === 'demo' || isStaff) {
-      // In sandbox mode or for staff, show full roster
+    if (sessionMode === 'demo') {
       return complaints;
     }
-    // Student in authenticated mode: strictly access their own complaints or public anonymized records
+    if (isStaff) {
+      // Authorized staff member accesses institutional grievance queue
+      return complaints;
+    }
+    // Student in authenticated mode: strictly access their own complaints
     const studentUid = currentUser?.uid;
     const studentEmail = currentUser?.email?.toLowerCase();
 
     return complaints.filter(
-      c => c.studentId === studentUid || 
-           (studentEmail && c.studentEmail?.toLowerCase() === studentEmail) ||
-           c.isAnonymous === true
+      c => (studentUid && c.studentId === studentUid) || 
+           (studentEmail && c.studentEmail?.toLowerCase() === studentEmail)
     );
   }, [complaints, sessionMode, isStaff, currentUser?.uid, currentUser?.email]);
 
@@ -664,27 +658,27 @@ export default function App() {
   const handleSubmitNewComplaint = async (newTicketData: Partial<ComplaintTicket>) => {
     const fullTicket: ComplaintTicket = {
       id: `ticket-${Date.now()}`,
-      ticketId: newTicketData.ticketId || `CV-2024-${Math.floor(100 + Math.random() * 900)}`,
-      studentId: currentUser?.uid || 'student_aanya',
-      studentEmail: currentUser?.email || 'aanya.sharma@imsec.ac.in',
-      studentName: profile?.name || 'Aanya Sharma',
-      studentRoll: profile?.rollNumber || '2101430100042',
-      studentBranch: profile?.branch || 'Computer Science',
+      ticketId: newTicketData.ticketId || `CV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      studentId: currentUser?.uid || '',
+      studentEmail: currentUser?.email || '',
+      studentName: profile?.name || (currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Student')),
+      studentRoll: profile?.rollNumber || '',
+      studentBranch: profile?.branch || '',
       isAnonymous: Boolean(newTicketData.isAnonymous),
       peerMasking: Boolean(newTicketData.peerMasking),
-      category: newTicketData.category || 'Classrooms and laboratories',
+      category: newTicketData.category || 'General Redressal',
       title: newTicketData.title || 'Untitled Grievance',
       description: newTicketData.description || '',
-      building: newTicketData.building || 'Academic Block B',
-      room: newTicketData.room || 'Room 201',
+      building: newTicketData.building || '',
+      room: newTicketData.room || '',
       incidentDateTime: newTicketData.incidentDateTime || new Date().toISOString(),
       fileURL: newTicketData.fileURL,
       fileName: newTicketData.fileName,
       fileSize: newTicketData.fileSize,
-      severity: newTicketData.severity || 'High',
-      responsibleCell: newTicketData.responsibleCell || 'IT & Multimedia Cell',
-      designatedOfficer: newTicketData.designatedOfficer || 'Er. R. K. Saxena (Sr. Tech)',
-      slaWindow: newTicketData.slaWindow || '24h Resolution Window',
+      severity: newTicketData.severity || 'Medium',
+      responsibleCell: newTicketData.responsibleCell || 'Institutional Grievance Cell',
+      designatedOfficer: newTicketData.designatedOfficer || 'Assigned Officer',
+      slaWindow: newTicketData.slaWindow || '48h Resolution Window',
       aiSummary: newTicketData.aiSummary || 'Student grievance recorded under institutional tracking.',
       suggestedAction: newTicketData.suggestedAction || 'Assign to standing redressal committee.',
       status: 'Submitted',
@@ -694,7 +688,7 @@ export default function App() {
       statusHistory: [
         {
           status: 'Submitted',
-          updatedBy: profile?.name || 'Complainant',
+          updatedBy: profile?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Complainant'),
           updatedAt: Date.now(),
           changeSummary: 'Grievance lodged with statutory digital affirmation.'
         }
@@ -794,7 +788,7 @@ export default function App() {
             ...(t.statusHistory || []),
             {
               status: 'Resolved' as const,
-              updatedBy: profile?.name || 'Aanya Sharma',
+              updatedBy: profile?.name || (currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Complainant')),
               updatedAt: Date.now(),
               changeSummary: `Complainant verified resolution with ${rating}-star rating.`
             }
@@ -836,7 +830,7 @@ export default function App() {
             ...(t.statusHistory || []),
             {
               status: 'Escalated' as const,
-              updatedBy: profile?.name || 'Aanya Sharma',
+              updatedBy: profile?.name || (currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Complainant')),
               updatedAt: Date.now(),
               changeSummary: `Resolution rejected by student. Escalated to HOD: ${reason}`
             }
@@ -991,7 +985,7 @@ export default function App() {
             />
           )}
 
-          {currentTab === 'campus-insights' && <CampusInsights />}
+          {currentTab === 'campus-insights' && <CampusInsights complaints={complaints} />}
 
           {currentTab === 'student-profile' && (
             <div className="flex flex-col gap-4">

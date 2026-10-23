@@ -28,10 +28,10 @@ export const Header: React.FC<HeaderProps> = ({
   isForcedAdmin,
   onToggleAdmin,
 }) => {
-  const unreadCount = notifications.filter(n => !n.read).length || (notifications.length > 0 ? notifications.length : 3);
+  const unreadCount = notifications.filter(n => !n.read).length;
 
-  const studentName = profile?.name || 'Aanya Sharma';
-  const rollNumber = profile?.rollNumber || (profile?.role === 'admin' ? 'EMP-NODAL-088' : '2101430100042');
+  const studentName = profile?.name || (profile?.email ? profile.email.split('@')[0] : 'User');
+  const rollNumber = profile?.rollNumber || (profile?.role === 'admin' ? 'Staff Member' : '');
   const avatarUrl = profile?.photoURL || 'https://lh3.googleusercontent.com/aida-public/AB6AXuCtCFTI8WrD3h4N_jIV1xAZB1YSbIZUebduORRKOf9MeiPWBfAl9SWIIcPPOQRN9XTNyVMX_m77qlbRaXr2vYhUXkyllWUCbgK6bfaHP01RV0S57PB4GW8xMZod9d_iZguTXnVMcCbE2h1OD0rEnglZg3Ch5LfPdCq9oNYMqk9cogJsLvuay_JWtYSdbyliuBOypIttS80rkcKAJFzLySz5KckR9g5TQ49K-pEm2bCtKProEbkzZxdv';
 
   return (
@@ -105,10 +105,10 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
                 <div className="max-h-64 overflow-y-auto space-y-2">
                   {notifications.length === 0 ? (
-                    <div className="py-4 text-center text-xs text-[#464554]">
-                      <p className="font-medium text-[#0b1c30]">Wi-Fi #CV-2024-089 Resolved</p>
-                      <p className="text-[11px] mt-0.5">Please test band in Lab 204 and certify closure.</p>
-                      <span className="text-[10px] text-[#777586] font-mono mt-1 block">34 hours left before auto-closure</span>
+                    <div className="py-6 text-center text-xs text-[#777586] flex flex-col items-center justify-center gap-1.5">
+                      <span className="material-symbols-outlined text-[24px] text-[#777586]/60">notifications_off</span>
+                      <p className="font-semibold text-[#0b1c30]">No notifications available.</p>
+                      <p className="text-[11px] text-[#464554]">You're all caught up with your grievance updates.</p>
                     </div>
                   ) : (
                     notifications.map((n) => (

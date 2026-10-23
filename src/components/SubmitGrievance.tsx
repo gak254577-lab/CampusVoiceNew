@@ -12,29 +12,23 @@ export const SubmitGrievance: React.FC<SubmitGrievanceProps> = ({
   onSubmit,
   onCancel,
 }) => {
-  const [title, setTitle] = useState('Classroom Projector Flickering and Disconnecting in Block B - Room 201');
-  const [category, setCategory] = useState('Classrooms and laboratories');
-  const [incidentDateTime, setIncidentDateTime] = useState('2024-10-14T11:30');
-  const [building, setBuilding] = useState('block-b');
-  const [room, setRoom] = useState('Room 201 / 2nd Floor West Wing');
-  const [description, setDescription] = useState(
-    'During the Operating Systems lecture (CS-502) at 11:30 AM today, the ceiling-mounted Epson projector in Room 201 kept blacking out every 3-4 minutes. The HDMI interface cable seems frayed near the podium wall socket. Around 64 students were present, and Prof. Verma had to suspend digital demonstrations. This is the 3rd recurrence this week.'
-  );
-  const [severity, setSeverity] = useState<'Urgent' | 'High' | 'Normal' | 'Medium' | 'Low'>('High');
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('Wi-Fi & IT Infrastructure');
+  const [incidentDateTime, setIncidentDateTime] = useState(() => new Date().toISOString().slice(0, 16));
+  const [building, setBuilding] = useState('');
+  const [room, setRoom] = useState('');
+  const [description, setDescription] = useState('');
+  const [severity, setSeverity] = useState<'Urgent' | 'High' | 'Normal' | 'Medium' | 'Low'>('Normal');
   const [applyAiRouting, setApplyAiRouting] = useState(true);
-  const [affirmation, setAffirmation] = useState(true);
-  const [peerMasking, setPeerMasking] = useState(true);
-  const [attachment, setAttachment] = useState<{ name: string; size: string; url: string } | null>({
-    name: 'projector_cable_fault_b201.jpg',
-    size: '2.4 MB',
-    url: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC77DTkwxax8SCaIi06NevS04etez928ovHQQM-ED-hil_pif4AlJRpyvXfiVIMO0Qx5yuhf6DCM9VNjpPT3AWlgiPlt1pbnHar4IMWHpLc1ew_JqSocX-UI_yUYTXiF3b2FIil1HeN5NGLHjJm9R1sZiY3bTiY362rreiBckfNv50pT_gn3YcFtvSL8duxvNUoQq05eZVwpTktACeumO7c0X0QeIazLVcZ_p8vl1Xt2hCV5GhLnVF7'
-  });
+  const [affirmation, setAffirmation] = useState(false);
+  const [peerMasking, setPeerMasking] = useState(false);
+  const [attachment, setAttachment] = useState<{ name: string; size: string; url: string } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [createdTicketId, setCreatedTicketId] = useState('');
 
-  const rollNumber = profile?.rollNumber || '2101430100042';
+  const rollNumber = profile?.rollNumber || '';
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

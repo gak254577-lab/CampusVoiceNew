@@ -63,8 +63,19 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
   });
 
   const activeCount = complaints.filter(c => c.status === 'Submitted' || c.status === 'In Review' || c.status === 'In Progress').length;
-  const verificationCount = complaints.filter(c => c.status === 'Resolution Submitted').length || 1;
+  const verificationCount = complaints.filter(c => c.status === 'Resolution Submitted').length;
   const resolvedCount = complaints.filter(c => c.status === 'Resolved').length;
+  const escalatedCount = complaints.filter(c => c.escalated || c.status === 'Escalated').length;
+
+  // Dynamic Turnaround and SLA calculations
+  const resolvedWithTimes = complaints.filter(c => c.status === 'Resolved' && c.createdAt && c.updatedAt && c.updatedAt > c.createdAt);
+  const avgTurnaroundHours = resolvedWithTimes.length > 0
+    ? (resolvedWithTimes.reduce((acc, c) => acc + (c.updatedAt - c.createdAt) / (1000 * 60 * 60), 0) / resolvedWithTimes.length).toFixed(1)
+    : null;
+
+  const slaComplianceRate = complaints.length > 0
+    ? Math.max(0, Math.round(((complaints.length - escalatedCount) / complaints.length) * 100))
+    : 100;
 
   const handleExport = () => {
     const csvContent =
@@ -100,7 +111,9 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-[#005c54] animate-pulse"></span>
             SLA Tracker: Synchronized
           </span>
-          <span className="font-mono text-[11px] text-[#777586]">REF: AY24-O-210143</span>
+          <span className="font-mono text-[11px] text-[#777586]">
+            RECORD-COUNT: {complaints.length}
+          </span>
         </div>
       </div>
 
@@ -208,7 +221,7 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
               </span>
             </div>
             <span className="font-mono text-[11px] text-[#005c54] bg-[#89f5e7]/40 px-2 py-0.5 rounded font-bold border border-[#005c54]/20">
-              98.4% Compliant
+              {slaComplianceRate}% Compliant
             </span>
           </div>
 
@@ -218,11 +231,13 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
                 Avg. Turnaround
               </span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-xl font-bold text-[#0b1c30]">36.2</span>
-                <span className="text-xs text-[#464554]">Hours</span>
+                <span className="text-xl font-bold text-[#0b1c30]">
+                  {avgTurnaroundHours !== null ? avgTurnaroundHours : 'N/A'}
+                </span>
+                {avgTurnaroundHours !== null && <span className="text-xs text-[#464554]">Hours</span>}
               </div>
               <span className="font-mono text-[11px] text-[#005c54] mt-0.5 flex items-center gap-1 font-semibold">
-                <span className="material-symbols-outlined text-[12px]">trending_down</span> -4.1h vs Avg
+                {avgTurnaroundHours !== null ? 'Target: ≤48h' : 'Awaiting closures'}
               </span>
             </div>
 
@@ -231,15 +246,17 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
                 Proctorial Esc.
               </span>
               <div className="flex items-baseline gap-1 mt-0.5">
-                <span className="text-xl font-bold text-[#0b1c30]">0</span>
+                <span className="text-xl font-bold text-[#0b1c30]">{escalatedCount}</span>
                 <span className="text-xs text-[#464554]">Escalated</span>
               </div>
-              <span className="font-mono text-[11px] text-[#464554] mt-0.5">Under 5-day limit</span>
+              <span className="font-mono text-[11px] text-[#464554] mt-0.5">
+                {escalatedCount === 0 ? 'Zero active breaches' : 'Escalated to HOD'}
+              </span>
             </div>
           </div>
 
           <div className="bg-[#eff4ff] px-3 py-1.5 rounded flex items-center justify-between text-[11px] text-[#464554] font-medium border border-[#e2e8f0]">
-            <span>Active Escort Window: <strong>3 Working Days Rem.</strong></span>
+            <span>Statutory SLA: <strong>Level-1 (48h) • Level-2 (5d)</strong></span>
             <span className="material-symbols-outlined text-[16px] text-[#2a14b4]">policy</span>
           </div>
         </div>
@@ -339,8 +356,20 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
 
         {/* Rows */}
         {filteredComplaints.length === 0 ? (
-          <div className="py-12 text-center text-[#777586] text-xs">
-            No grievance records matching your query.
+          <div className="py-16 text-center text-[#777586] text-xs flex flex-col items-center justify-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-[#eff4ff] flex items-center justify-center text-[#2a14b4]">
+              <span className="material-symbols-outlined text-[26px]">inbox</span>
+            </div>
+            <div className="flex flex-col gap-1 max-w-sm">
+              <span className="font-bold text-sm text-[#0b1c30]">
+                {complaints.length === 0 ? 'No grievances submitted yet' : 'No matching grievances found'}
+              </span>
+              <span className="text-xs text-[#464554]">
+                {complaints.length === 0
+                  ? 'You have not submitted any grievances yet. Lodge your first grievance to begin tracking redressal.'
+                  : 'No grievance records match your current search and filter selections.'}
+              </span>
+            </div>
           </div>
         ) : (
           filteredComplaints.map((ticket) => {
@@ -381,7 +410,7 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
                       <span className="text-[#c7c4d7] text-xs">•</span>
                       <div className="flex items-center gap-1 text-[#464554] text-[11px]">
                         <span className="material-symbols-outlined text-[14px] text-[#777586]">location_on</span>
-                        <span>{ticket.building || 'Block A'} {ticket.room ? `• ${ticket.room}` : ''}</span>
+                        <span>{ticket.building || 'Campus Facility'} {ticket.room ? `• ${ticket.room}` : ''}</span>
                       </div>
                     </div>
                     <h3 className="text-sm font-bold text-[#0b1c30] leading-tight hover:text-[#2a14b4] transition-colors cursor-pointer" onClick={() => onSelectTicket(ticket)}>
@@ -395,14 +424,18 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
                   {/* Assigned Officer */}
                   <div className="lg:col-span-2 flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-full bg-[#d3e4fe] border border-[#c7c4d7]/60 flex items-center justify-center text-[#2a14b4] font-bold font-mono text-xs shrink-0">
-                      RK
+                      {ticket.resolutionProof?.officerName
+                        ? ticket.resolutionProof.officerName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                        : ticket.designatedOfficer
+                        ? ticket.designatedOfficer.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                        : 'CV'}
                     </div>
                     <div className="flex flex-col min-w-0">
                       <span className="text-xs font-bold text-[#0b1c30] truncate">
-                        {ticket.resolutionProof?.officerName || 'Er. Rakesh Kumar'}
+                        {ticket.resolutionProof?.officerName || ticket.designatedOfficer || (ticket.status === 'Submitted' ? 'Awaiting Allocation' : 'Assigned Cell Officer')}
                       </span>
                       <span className="text-[11px] text-[#777586] truncate">
-                        {ticket.resolutionProof?.officerRole || 'Network Admin'}
+                        {ticket.resolutionProof?.officerRole || ticket.responsibleCell || 'Redressal Authority'}
                       </span>
                     </div>
                   </div>
@@ -470,10 +503,10 @@ export const MyTickets: React.FC<MyTicketsProps> = ({
                       <span className="material-symbols-outlined text-amber-600 text-[20px] mt-0.5">task_alt</span>
                       <div className="flex flex-col">
                         <span className="text-xs font-bold text-[#0b1c30]">
-                          Officer Resolution Note (Er. Rakesh Kumar):
+                          Officer Resolution Note ({ticket.resolutionProof?.officerName || ticket.designatedOfficer || 'Assigned Officer'}):
                         </span>
                         <p className="text-xs text-[#464554] mt-0.5">
-                          "{ticket.resolutionProof?.actionTaken || 'Installed secondary Cisco AP-502 unit with 5GHz dedicated channel backhaul. Verified throughput at 112 Mbps across all 45 terminals. Please check ping latency in Lab 204 and click verify.'}"
+                          "{ticket.resolutionProof?.actionTaken || ticket.adminNote || 'Resolution action submitted by assigned cell. Please verify resolution on ground and confirm.'}"
                         </p>
                       </div>
                     </div>

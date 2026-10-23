@@ -21,15 +21,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPill, setFilterPill] = useState<'all' | 'active' | 'verification' | 'closed'>('all');
 
-  const studentName = profile?.name || 'Aanya Sharma';
-  const rollNumber = profile?.rollNumber || '2101430100042';
-  const branch = profile?.branch || 'Computer Science';
-  const year = profile?.year || '4th Year';
+  const studentName = profile?.name || (profile?.email ? profile.email.split('@')[0] : 'Student');
+  const rollNumber = profile?.rollNumber || 'Not Specified';
+  const branch = profile?.branch || 'Engineering';
+  const year = profile?.year || 'Current Student';
 
-  // Find verification-required complaint or default to mock
-  const verificationTicket = complaints.find(
-    c => c.status === 'Resolution Submitted' || c.ticketId === 'CV-2024-089'
-  ) || complaints[0];
+  // Only display verification banner if an actual ticket is awaiting student verification
+  const verificationTicket = complaints.find(c => c.status === 'Resolution Submitted');
 
   // Filtering for table
   const filteredComplaints = complaints.filter(ticket => {
@@ -52,10 +50,55 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     return true;
   });
 
-  const totalFiled = complaints.length || 5;
-  const inProgressCount = complaints.filter(c => c.status === 'In Progress' || c.status === 'In Review').length || 2;
-  const pendingReviewCount = complaints.filter(c => c.status === 'Submitted' || c.status === 'Resolution Submitted').length || 1;
-  const resolvedCount = complaints.filter(c => c.status === 'Resolved').length || 2;
+  const totalFiled = complaints.length;
+  const inProgressCount = complaints.filter(c => c.status === 'In Progress' || c.status === 'In Review').length;
+  const verificationCount = complaints.filter(c => c.status === 'Resolution Submitted').length;
+  const pendingReviewCount = complaints.filter(c => c.status === 'Submitted').length;
+  const resolvedCount = complaints.filter(c => c.status === 'Resolved').length;
+
+  const earliestTicket = complaints.length > 0
+    ? complaints.reduce((earliest, c) => (c.createdAt && c.createdAt < (earliest.createdAt || Infinity) ? c : earliest), complaints[0])
+    : null;
+
+  const activeCategories = Array.from(new Set(complaints.filter(c => c.status === 'In Progress' || c.status === 'In Review').map(c => c.category)));
+
+  // Generate dynamic chronological activity stream from actual complaints
+  const activityEvents = complaints.flatMap(ticket => {
+    const events: Array<{
+      id: string;
+      ticketId: string;
+      title: string;
+      action: string;
+      detail: string;
+      timestamp: number;
+      badgeColor: string;
+    }> = [];
+
+    if (ticket.statusHistory && ticket.statusHistory.length > 0) {
+      ticket.statusHistory.forEach((h, idx) => {
+        events.push({
+          id: `${ticket.id}-${idx}`,
+          ticketId: ticket.ticketId,
+          title: ticket.title,
+          action: h.status,
+          detail: h.changeSummary || `Status updated to ${h.status} by ${h.updatedBy || 'Authority'}.`,
+          timestamp: h.updatedAt || ticket.updatedAt || ticket.createdAt,
+          badgeColor: h.status === 'Resolved' ? 'bg-emerald-500' : h.status === 'Resolution Submitted' ? 'bg-amber-500' : 'bg-sky-500'
+        });
+      });
+    } else {
+      events.push({
+        id: `${ticket.id}-init`,
+        ticketId: ticket.ticketId,
+        title: ticket.title,
+        action: ticket.status,
+        detail: ticket.description || 'Grievance submitted into institutional ledger.',
+        timestamp: ticket.createdAt,
+        badgeColor: ticket.status === 'Resolved' ? 'bg-emerald-500' : ticket.status === 'Resolution Submitted' ? 'bg-amber-500' : 'bg-[#4338ca]'
+      });
+    }
+    return events;
+  }).sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
 
   return (
     <div className="flex flex-col w-full pb-10">
@@ -119,15 +162,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     Action Required by Complainant
                   </span>
                   <span className="font-mono text-xs text-[#464554] font-bold">
-                    #{verificationTicket.ticketId || 'CV-2024-089'}
+                    #{verificationTicket.ticketId}
                   </span>
                 </div>
                 <p className="text-sm text-[#0b1c30] mt-1">
-                  IT Maintenance Staff has marked <span className="font-semibold">"{verificationTicket.title}"</span> as resolved.
+                  {verificationTicket.resolutionProof?.officerName || verificationTicket.designatedOfficer || 'Assigned Institutional Cell'} has submitted resolution for <span className="font-semibold">"{verificationTicket.title}"</span>.
                 </p>
                 <span className="text-xs text-[#464554] flex items-center gap-1 mt-0.5">
                   <span className="material-symbols-outlined text-[15px] text-amber-700">schedule</span>
-                  Automated closure in <strong className="text-[#0b1c30] font-semibold">38 hours</strong> if unverified. Please test the network band in Lab 204.
+                  Please inspect evidence and verify resolution in {verificationTicket.building || 'campus'}{verificationTicket.room ? ` (${verificationTicket.room})` : ''}.
                 </span>
               </div>
             </div>
@@ -169,7 +212,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </span>
           </div>
           <div className="mt-2 pt-1 flex items-center gap-1 text-[11px] text-[#777586]">
-            <span>First logged: 12 Jan 2023</span>
+            <span>
+              {earliestTicket?.createdAt
+                ? `First logged: ${new Date(earliestTicket.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                : 'No grievances logged yet'}
+            </span>
           </div>
         </div>
 
@@ -191,7 +238,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           </div>
           <div className="mt-2 pt-1 flex items-center gap-1 text-[11px] text-[#464554]">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-600 animate-pulse"></span>
-            <span>Estate • IT Infrastructure</span>
+            <span className="truncate">
+              {activeCategories.length > 0 ? activeCategories.slice(0, 2).join(' • ') : 'No active dispatches'}
+            </span>
           </div>
         </div>
 
@@ -208,11 +257,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               {String(pendingReviewCount).padStart(2, '0')}
             </span>
             <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-              Under Stage-1 SLA
+              Stage-1 Review
             </span>
           </div>
           <div className="mt-2 pt-1 flex items-center gap-1 text-[11px] text-[#777586]">
-            <span>Awaiting Proctorial assignment</span>
+            <span>
+              {pendingReviewCount > 0 ? `${pendingReviewCount} case(s) awaiting allocation` : 'Zero cases pending review'}
+            </span>
           </div>
         </div>
 
@@ -229,12 +280,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               {String(resolvedCount).padStart(2, '0')}
             </span>
             <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
-              100% Student Verified
+              Student Verified
             </span>
           </div>
           <div className="mt-2 pt-1 flex items-center gap-1 text-[11px] text-emerald-800 font-semibold">
             <span className="material-symbols-outlined text-[14px]">thumb_up</span>
-            <span>Avg Resolution: 3.2 Days</span>
+            <span>
+              {resolvedCount > 0 ? `${resolvedCount} grievance(s) certified resolved` : 'No resolved grievances yet'}
+            </span>
           </div>
         </div>
       </div>
@@ -316,7 +369,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                   }`}
                 >
-                  Requires Verification (1)
+                  Requires Verification ({verificationCount})
                 </button>
                 <button
                   onClick={() => setFilterPill('closed')}
@@ -490,52 +543,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </span>
             </div>
 
-            <div className="relative pl-6 space-y-5 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#d3e4fe]">
-              {/* Step 1: Resolution Submitted */}
-              <div className="relative flex flex-col gap-0.5">
-                <span className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-amber-500 shadow-xs ring-4 ring-amber-100"></span>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#0b1c30]">Resolution Submitted</span>
-                  <span className="font-mono text-[10px] text-[#777586]">2h ago</span>
-                </div>
-                <p className="text-xs text-[#0b1c30] mt-0.5">
-                  Hardware replaced and throughput tested at 112 Mbps by Network Admin <span className="font-semibold">Er. Rakesh Kumar</span>.
-                </p>
-                <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-[#2a14b4]">
-                  <span className="bg-[#eff4ff] px-1.5 py-0.5 rounded font-bold">Ticket #CV-2024-089</span>
-                </div>
+            {activityEvents.length === 0 ? (
+              <div className="py-8 text-center text-[#777586] text-xs flex flex-col items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-[28px] text-[#c7c4d7]">notifications_paused</span>
+                <span>No grievance activity recorded yet. Updates will appear here as your complaints are reviewed and resolved.</span>
               </div>
-
-              {/* Step 2: Technician Dispatched */}
-              <div className="relative flex flex-col gap-0.5">
-                <span className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-sky-500 ring-4 ring-sky-100"></span>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#0b1c30]">Technician Dispatched</span>
-                  <span className="font-mono text-[10px] text-[#777586]">Yesterday</span>
-                </div>
-                <p className="text-xs text-[#0b1c30] mt-0.5">
-                  Estate Office assigned Plumbing &amp; Compressor Engineer for Raman Hostel cooler.
-                </p>
-                <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-[#2a14b4]">
-                  <span className="bg-[#eff4ff] px-1.5 py-0.5 rounded font-bold">Ticket #CV-2024-074</span>
-                </div>
+            ) : (
+              <div className="relative pl-6 space-y-5 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-[2px] before:bg-[#d3e4fe]">
+                {activityEvents.map((event) => (
+                  <div key={event.id} className="relative flex flex-col gap-0.5">
+                    <span className={`absolute -left-6 top-1 w-3 h-3 rounded-full ${event.badgeColor} ring-4 ring-slate-100`}></span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#0b1c30]">{event.action}</span>
+                      <span className="font-mono text-[10px] text-[#777586]">
+                        {new Date(event.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#0b1c30] mt-0.5 line-clamp-2">
+                      {event.detail}
+                    </p>
+                    <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-[#2a14b4]">
+                      <span className="bg-[#eff4ff] px-1.5 py-0.5 rounded font-bold">#{event.ticketId}</span>
+                      <span className="text-[#777586] truncate max-w-[150px]">{event.title}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              {/* Step 3: Formal Acknowledgement */}
-              <div className="relative flex flex-col gap-0.5">
-                <span className="absolute -left-6 top-1 w-3 h-3 rounded-full bg-[#4338ca] ring-4 ring-[#e3dfff]"></span>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#0b1c30]">Formal Acknowledgement</span>
-                  <span className="font-mono text-[10px] text-[#777586]">3 days ago</span>
-                </div>
-                <p className="text-xs text-[#0b1c30] mt-0.5">
-                  Ticket verified &amp; routed to Department IT Cell by HOD Office.
-                </p>
-                <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-[#2a14b4]">
-                  <span className="bg-[#eff4ff] px-1.5 py-0.5 rounded font-bold">Ticket #CV-2024-089</span>
-                </div>
-              </div>
-            </div>
+            )}
 
             <button
               onClick={onOpenSop}

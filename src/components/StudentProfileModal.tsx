@@ -14,12 +14,12 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   onUpdateProfile,
   onSignOut,
 }) => {
-  const [name, setName] = useState(profile?.name || 'Aanya Sharma');
-  const [rollNumber, setRollNumber] = useState(profile?.rollNumber || '2101430100042');
-  const [branch, setBranch] = useState(profile?.branch || 'Computer Science');
-  const [year, setYear] = useState(profile?.year || '4th Year');
-  const [hostelBlock, setHostelBlock] = useState(profile?.hostelBlock || 'Block C (Girls)');
-  const [phone, setPhone] = useState(profile?.phone || '0120-2780281');
+  const [name, setName] = useState(profile?.name || (profile?.email ? profile.email.split('@')[0] : ''));
+  const [rollNumber, setRollNumber] = useState(profile?.rollNumber || '');
+  const [branch, setBranch] = useState(profile?.branch || 'Computer Science & Engineering');
+  const [year, setYear] = useState(profile?.year || '1st Year');
+  const [hostelBlock, setHostelBlock] = useState(profile?.hostelBlock || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
   const [peerMaskingDefault, setPeerMaskingDefault] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 

@@ -13,7 +13,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   setCurrentTab,
-  activeTicketsCount = 2,
+  activeTicketsCount = 0,
   isStaff = false,
   onRestrictedAccess,
 }) => {
