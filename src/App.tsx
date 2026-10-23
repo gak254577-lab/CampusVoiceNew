@@ -34,6 +34,7 @@ import { CampusInsights } from './components/CampusInsights';
 import { StudentProfileModal } from './components/StudentProfileModal';
 import { RedressalSopModal } from './components/RedressalSopModal';
 import { AccessDeniedModal } from './components/AccessDeniedModal';
+import { LoginPage } from './components/LoginPage';
 import NotificationToastContainer from './components/NotificationToast';
 
 // Default complaints from the Stitch Export (Used for initial hydration & sandbox demo)
@@ -156,7 +157,7 @@ export default function App() {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [sessionMode, setSessionMode] = useState<'authenticated' | 'demo' | 'unauthenticated'>('demo');
+  const [sessionMode, setSessionMode] = useState<'authenticated' | 'demo' | 'unauthenticated'>('unauthenticated');
   const [authLoading, setAuthLoading] = useState(true);
   const [authSecurityError, setAuthSecurityError] = useState<SecurityErrorState | null>(null);
 
@@ -330,23 +331,10 @@ export default function App() {
           setCurrentTab('dashboard');
         }
       } else {
-        // No active Firebase authentication session
-        const storedMockUser = localStorage.getItem('mock_user_session');
-        if (storedMockUser) {
-          try {
-            const mock = JSON.parse(storedMockUser);
-            setCurrentUser(mock);
-            const storedProf = localStorage.getItem(`profile_${mock.uid}`);
-            if (storedProf) {
-              setProfile(JSON.parse(storedProf));
-            }
-            setSessionMode('demo');
-          } catch (e) {
-            setupDefaultDemoSession();
-          }
-        } else {
-          setupDefaultDemoSession();
-        }
+        // No active Firebase authentication session -> Require Login
+        setCurrentUser(null);
+        setProfile(null);
+        setSessionMode('unauthenticated');
       }
 
       setAuthLoading(false);
@@ -783,6 +771,36 @@ export default function App() {
   const activeTicketsCount = permittedComplaints.filter(
     c => c.status === 'Submitted' || c.status === 'In Review' || c.status === 'In Progress' || c.status === 'Resolution Submitted'
   ).length;
+
+  // 1. Initial Auth Verification Loader
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#f8f9ff] flex items-center justify-center antialiased">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-[#4338ca] border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-xs text-[#464554] font-medium tracking-wide">
+            Verifying institutional credentials...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated State -> Present Dedicated Google Login Page
+  if (sessionMode === 'unauthenticated' || !currentUser) {
+    return (
+      <>
+        <NotificationToastContainer toasts={toasts} onRemove={removeToast} />
+        <LoginPage
+          onGoogleLogin={handleGoogleLogin}
+          loading={authLoading}
+          error={authSecurityError}
+          onClearError={() => setAuthSecurityError(null)}
+          onDemoPreview={setupDefaultDemoSession}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="relative min-h-screen bg-[#f8f9ff] text-[#0b1c30] antialiased">
