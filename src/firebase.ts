@@ -19,9 +19,10 @@ export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Apply Google custom parameter to prompt account selection
+// Apply Google custom parameters: prompt account selection and hint institutional domain
 googleProvider.setCustomParameters({
-  prompt: 'select_account'
+  prompt: 'select_account',
+  hd: 'imsec.ac.in'
 });
 
 // Firebase initialized. Note: Admin path is protected until user login.

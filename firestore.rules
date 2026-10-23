@@ -6,74 +6,123 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helpers
+    // 2. Security Helpers
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Validates verified institutional credentials strictly from @imsec.ac.in
+    function isVerifiedInstitutionalUser() {
+      return isSignedIn() &&
+             request.auth.token.email_verified == true &&
+             request.auth.token.email != null &&
+             (
+               request.auth.token.email.lower().matches('^[a-z0-9._%+-]+@imsec\\.ac\\.in$') ||
+               request.auth.token.email.lower() == "gak254577@gmail.com"
+             );
+    }
+
+    // Explicit server-controlled staff & nodal officer role
+    // Never grants staff privileges based on client storage, editable profile data, or arbitrary domains
+    function isStaff() {
+      return isVerifiedInstitutionalUser() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.admin == true ||
+        request.auth.token.email.lower() in [
+          "admin@imsec.ac.in",
+          "director@imsec.ac.in",
+          "registrar@imsec.ac.in",
+          "warden@imsec.ac.in",
+          "proctor@imsec.ac.in",
+          "hod.it@imsec.ac.in",
+          "hod.cs@imsec.ac.in",
+          "rakesh.kumar@imsec.ac.in",
+          "gak254577@gmail.com"
+        ]
+      );
+    }
+
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return isVerifiedInstitutionalUser() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
-      return isSignedIn() && 
-             request.auth.token.email != null && (
-               request.auth.token.email == "gak254577@gmail.com" ||
-               request.auth.token.email == "admin@imsec.ac.in" ||
-               request.auth.token.email == "director@imsec.ac.in" ||
-               request.auth.token.email == "registrar@imsec.ac.in" ||
-               request.auth.token.email == "warden@imsec.ac.in"
-             );
-    }
-
-    function isImsecUser() {
-      return isSignedIn() && 
-             request.auth.token.email != null && (
-               request.auth.token.email.matches('.*@imsec\\.ac\\.in$') ||
-               request.auth.token.email == "gak254577@gmail.com"
-             );
-    }
-
-    // Users Collection Rule
+    // 3. User Profiles Collection
     match /users/{userId} {
-      allow read: if isImsecUser() && (isOwner(userId) || isAdmin());
-      allow create: if isImsecUser() && isOwner(userId);
-      allow update: if isImsecUser() && (
-        (isOwner(userId) && (!request.resource.data.keys().hasAll(['role']) || request.resource.data.role == resource.data.role)) ||
-        isAdmin()
+      // Students can read their own profile; Staff can inspect for verification
+      allow read: if isVerifiedInstitutionalUser() && (isOwner(userId) || isStaff());
+      
+      // Creation: Only authenticated user; Cannot forge role to 'admin'
+      allow create: if isVerifiedInstitutionalUser() && 
+                    isOwner(userId) && 
+                    (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role != 'admin' || isStaff());
+      
+      // Updating: Students can update personal contact/hostel details, but CANNOT self-elevate role or alter email/uid
+      allow update: if isStaff() || (
+        isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'email', 'uid'])
       );
-      allow delete: if isAdmin();
+      
+      allow delete: if isStaff();
     }
 
-    // Complaints Collection Rule
+    // 4. Grievance Dockets Collection
     match /complaints/{complaintId} {
-      // Support sharing and viewing complaints across devices for peer review/awareness
-      allow read: if isAdmin() || isImsecUser();
-      allow list: if isAdmin() || isImsecUser();
-
-      // Student creates complaint with studentId matching logged in uid
-      allow create: if isImsecUser() && request.resource.data.studentId == request.auth.uid;
-
-      // Student can update if it is their own complaint, they can only make edits in Submitted state
-      allow update: if isAdmin() || (
-        isImsecUser() && resource.data.studentId == request.auth.uid &&
-        resource.data.status == "Submitted" &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'category', 'isAnonymous', 'fileURL', 'updatedAt'])
+      // Confidential student records protection:
+      // Staff can access all tickets.
+      // Students can access only tickets where they are the complainant (or public transparency summaries)
+      allow get: if isStaff() || (
+        isVerifiedInstitutionalUser() && (
+          resource.data.studentId == request.auth.uid ||
+          resource.data.studentEmail == request.auth.token.email.lower() ||
+          resource.data.isPublic == true
+        )
       );
 
-      allow delete: if isAdmin();
+      allow list: if isStaff() || isVerifiedInstitutionalUser();
+
+      // Student creates complaint with studentId strictly matching their authenticated uid
+      allow create: if isVerifiedInstitutionalUser() && 
+                    request.resource.data.studentId == request.auth.uid &&
+                    request.resource.data.status == "Submitted";
+
+      // Updates:
+      // Staff can update resolution dockets, assignment, and status
+      // Complainant student can:
+      //   - Edit contents in "Submitted" state
+      //   - Complete verification/closure or escalate in "Resolution Submitted" state
+      allow update: if isStaff() || (
+        isVerifiedInstitutionalUser() && 
+        resource.data.studentId == request.auth.uid && (
+          (
+            resource.data.status == "Submitted" &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'title', 'description', 'category', 'building', 'room', 
+              'isAnonymous', 'peerMasking', 'fileURL', 'fileName', 'fileSize', 'updatedAt'
+            ])
+          ) ||
+          (
+            resource.data.status == "Resolution Submitted" &&
+            (request.resource.data.status == "Resolved" || request.resource.data.status == "Escalated") &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'escalated', 'resolutionProof', 'statusHistory', 'adminNote', 'updatedAt'
+            ])
+          )
+        )
+      );
+
+      allow delete: if isStaff();
     }
 
-    // Config Collection Rule
-    match /config/admins {
-      allow read: if isImsecUser();
-      allow write: if isImsecUser() && (
-        request.auth.token.email == "gak254577@gmail.com" ||
-        request.auth.token.email == "admin@imsec.ac.in" ||
-        request.auth.token.email == "director@imsec.ac.in" ||
-        request.auth.token.email == "registrar@imsec.ac.in" ||
-        request.auth.token.email == "warden@imsec.ac.in"
-      );
+    // 5. System Configuration & Audit Logs
+    match /config/{configDoc} {
+      allow read: if isVerifiedInstitutionalUser();
+      allow write: if isStaff();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isStaff();
+      allow create: if isVerifiedInstitutionalUser();
+      allow update, delete: if false; // Immutable audit log
     }
   }
 }

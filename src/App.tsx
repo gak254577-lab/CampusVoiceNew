@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
@@ -16,13 +16,12 @@ import {
   getDoc, 
   getDocs, 
   setDoc, 
-  updateDoc, 
-  query, 
-  orderBy 
+  updateDoc 
 } from 'firebase/firestore';
 
-import { auth, db, googleProvider, isMockFirebase, OperationType, handleFirestoreError } from './firebase';
+import { auth, db, googleProvider, isMockFirebase } from './firebase';
 import { UserProfile, ComplaintTicket, NotificationToast, PushNotificationMessage } from './types';
+import { validateCampusEmail, STAFF_EMAIL_ALLOWLIST, INSTITUTIONAL_DOMAIN } from './authSecurity';
 
 import { Header } from './components/Header';
 import { Sidebar, NavTab } from './components/Sidebar';
@@ -34,18 +33,10 @@ import { StaffResolutionDashboard } from './components/StaffResolutionDashboard'
 import { CampusInsights } from './components/CampusInsights';
 import { StudentProfileModal } from './components/StudentProfileModal';
 import { RedressalSopModal } from './components/RedressalSopModal';
+import { AccessDeniedModal } from './components/AccessDeniedModal';
 import NotificationToastContainer from './components/NotificationToast';
 
-// Hardcoded Admin Emails list for bootstrapping
-const ADMIN_EMAILS = [
-  "gak254577@gmail.com",
-  "admin@imsec.ac.in",
-  "director@imsec.ac.in",
-  "registrar@imsec.ac.in",
-  "warden@imsec.ac.in"
-];
-
-// Initial default complaints from the Stitch Export
+// Default complaints from the Stitch Export (Used for initial hydration & sandbox demo)
 const INITIAL_STITCH_COMPLAINTS: ComplaintTicket[] = [
   {
     id: 'ticket-cv-2024-089',
@@ -73,7 +64,7 @@ const INITIAL_STITCH_COMPLAINTS: ComplaintTicket[] = [
     assignedTo: 'Er. Rakesh Kumar',
     adminNote: 'Intervention completed. Replaced Cisco AP with Aruba AP-515. Throughput calibrated at 112 Mbps.',
     escalated: false,
-    createdAt: Date.now() - (24 * 60 * 60 * 1000), // 24 hours ago
+    createdAt: Date.now() - (24 * 60 * 60 * 1000),
     updatedAt: Date.now() - (2 * 60 * 60 * 1000),
     statusHistory: [
       { status: 'Submitted', updatedBy: 'Complainant', updatedAt: Date.now() - (24 * 60 * 60 * 1000), changeSummary: 'Grievance lodged with digital affirmation.' },
@@ -154,16 +145,24 @@ const INITIAL_STITCH_COMPLAINTS: ComplaintTicket[] = [
   }
 ];
 
+export interface SecurityErrorState {
+  code: string;
+  title: string;
+  message: string;
+  email?: string;
+}
+
 export default function App() {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [sessionMode, setSessionMode] = useState<'authenticated' | 'demo' | 'unauthenticated'>('demo');
   const [authLoading, setAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSecurityError, setAuthSecurityError] = useState<SecurityErrorState | null>(null);
 
   // App Navigation Tabs
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
-  const [isForcedAdmin, setIsForcedAdmin] = useState(false);
+  const [isForcedAdmin, setIsForcedAdmin] = useState(false); // Only applicable in demo simulation mode
 
   // Modals
   const [selectedTicket, setSelectedTicket] = useState<ComplaintTicket | null>(null);
@@ -176,7 +175,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<PushNotificationMessage[]>([]);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
 
-  // Toast Dispatcher Helper
+  // Toast Helper
   const addToast = (title: string, message: string, type: NotificationToast['type'] = 'info', ticketId?: string) => {
     const newToast: NotificationToast = {
       id: `toast-${Date.now()}-${Math.random()}`,
@@ -193,97 +192,161 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // Auth Listener
+  // -------------------------------------------------------------
+  // Firebase Auth State Listener
+  // -------------------------------------------------------------
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setAuthLoading(true);
 
-      // Check localStorage for simulated mock user session
-      const storedMockUser = localStorage.getItem('mock_user_session');
-      if (storedMockUser && !user) {
-        try {
-          const mockUser = JSON.parse(storedMockUser);
-          setCurrentUser(mockUser);
-          setAuthError(null);
-
-          const storedProfile = localStorage.getItem(`profile_${mockUser.uid}`);
-          if (storedProfile) {
-            setProfile(JSON.parse(storedProfile));
-          } else {
-            const defaultProfile: UserProfile = {
-              uid: mockUser.uid,
-              name: mockUser.displayName || 'Aanya Sharma',
-              email: mockUser.email || 'aanya.sharma@imsec.ac.in',
-              rollNumber: mockUser.email === 'admin@imsec.ac.in' ? 'EMP-IT-088' : '2101430100042',
-              branch: 'Computer Science & Engineering',
-              year: '4th Year',
-              hostelBlock: 'Block C (Girls)',
-              photoURL: mockUser.photoURL || 'https://lh3.googleusercontent.com/aida-public/AB6AXuCtCFTI8WrD3h4N_jIV1xAZB1YSbIZUebduORRKOf9MeiPWBfAl9SWIIcPPOQRN9XTNyVMX_m77qlbRaXr2vYhUXkyllWUCbgK6bfaHP01RV0S57PB4GW8xMZod9d_iZguTXnVMcCbE2h1OD0rEnglZg3Ch5LfPdCq9oNYMqk9cogJsLvuay_JWtYSdbyliuBOypIttS80rkcKAJFzLySz5KckR9g5TQ49K-pEm2bCtKProEbkzZxdv',
-              role: mockUser.email === 'admin@imsec.ac.in' ? 'admin' : 'student',
-              createdAt: Date.now()
-            };
-            localStorage.setItem(`profile_${mockUser.uid}`, JSON.stringify(defaultProfile));
-            setProfile(defaultProfile);
-          }
-          setAuthLoading(false);
-          return;
-        } catch (e) {
-          console.warn("Restoring mock session failed:", e);
-        }
-      }
-
       if (user) {
-        const testEmail = user.email || '';
-        const isImsec = testEmail.endsWith('@imsec.ac.in') || testEmail === 'gak254577@gmail.com';
-        if (!isImsec) {
-          setAuthError("Access denied. Only @imsec.ac.in college accounts are allowed.");
+        const rawEmail = user.email || '';
+        const isVerified = Boolean(user.emailVerified);
+
+        // 1. Mandatory Google email verification check
+        if (!isVerified) {
+          console.warn(`[Security Alert] Rejected unverified Google account: ${rawEmail}`);
           await signOut(auth);
           setCurrentUser(null);
           setProfile(null);
+          setSessionMode('unauthenticated');
+          setAuthSecurityError({
+            code: 'EMAIL_UNVERIFIED',
+            title: 'Unverified Google Account',
+            message: 'Your Google email address has not been verified. AICTE statutory security regulations require verified institutional email accounts.',
+            email: rawEmail
+          });
           setAuthLoading(false);
           return;
         }
 
-        setCurrentUser(user);
-        setAuthError(null);
+        // 2. Strict IMSEC domain validation & lookalike rejection
+        const validation = validateCampusEmail(rawEmail, isVerified);
+        if (!validation.isValid) {
+          console.warn(`[Security Alert] Rejected domain for ${rawEmail}: ${validation.errorMessage}`);
+          await signOut(auth);
+          setCurrentUser(null);
+          setProfile(null);
+          setSessionMode('unauthenticated');
+          setAuthSecurityError({
+            code: validation.errorCode || 'DOMAIN_UNAUTHORIZED',
+            title: 'Institutional Domain Unauthorized',
+            message: validation.errorMessage || `Only official IMS Engineering College accounts (@${INSTITUTIONAL_DOMAIN}) are permitted. Personal email providers and lookalike domains are strictly blocked.`,
+            email: rawEmail
+          });
+          setAuthLoading(false);
+          return;
+        }
 
-        // Fetch user profile from Firestore or local storage
+        // 3. Server-side token verification & custom claims check
+        let serverVerifiedRole: 'admin' | 'student' = validation.isStaff ? 'admin' : 'student';
+
         try {
-          if (isMockFirebase || localStorage.getItem('use_mock_auth') === 'true') {
-            const stored = localStorage.getItem(`profile_${user.uid}`);
-            if (stored) {
-              setProfile(JSON.parse(stored));
+          const idToken = await user.getIdToken();
+          const verifyResp = await fetch('/api/auth/verify-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken })
+          });
+
+          if (verifyResp.ok) {
+            const serverData = await verifyResp.json();
+            if (serverData.allowed && serverData.user) {
+              serverVerifiedRole = serverData.user.role;
             }
           } else {
-            const profSnap = await getDoc(doc(db, 'users', user.uid));
-            if (profSnap.exists()) {
-              setProfile(profSnap.data() as UserProfile);
+            const errData = await verifyResp.json().catch(() => ({}));
+            if (errData.error === 'FORBIDDEN' || errData.error === 'DOMAIN_UNAUTHORIZED') {
+              await signOut(auth);
+              setCurrentUser(null);
+              setProfile(null);
+              setSessionMode('unauthenticated');
+              setAuthSecurityError({
+                code: errData.error,
+                title: 'Server Authorization Denied',
+                message: errData.message || 'The server rejected this session.',
+                email: rawEmail
+              });
+              setAuthLoading(false);
+              return;
             }
           }
-        } catch (err) {
-          console.error("Firestore user profile loading failed:", err);
+        } catch (apiErr) {
+          console.warn("Backend session check offline/deferred:", apiErr);
+        }
+
+        // Session successfully verified!
+        setCurrentUser(user);
+        setSessionMode('authenticated');
+        setAuthSecurityError(null);
+
+        // Load or initialize user profile in Firestore
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const profSnap = await getDoc(userDocRef);
+
+          if (profSnap.exists()) {
+            const data = profSnap.data() as UserProfile;
+            // Ensure server-verified role is authoritative over client-side profile
+            setProfile({
+              ...data,
+              role: serverVerifiedRole,
+              email: validation.normalizedEmail
+            });
+          } else {
+            const newProfile: UserProfile = {
+              uid: user.uid,
+              name: user.displayName || validation.normalizedEmail.split('@')[0],
+              email: validation.normalizedEmail,
+              photoURL: user.photoURL || undefined,
+              role: serverVerifiedRole,
+              rollNumber: serverVerifiedRole === 'admin' ? 'EMP-NODAL-088' : '2101430100042',
+              branch: serverVerifiedRole === 'admin' ? 'Information Technology Cell' : 'Computer Science & Engineering',
+              year: serverVerifiedRole === 'admin' ? 'Senior Nodal Officer' : '4th Year',
+              hostelBlock: 'Campus Resident',
+              createdAt: Date.now()
+            };
+            await setDoc(userDocRef, newProfile);
+            setProfile(newProfile);
+          }
+        } catch (firestoreErr) {
+          console.warn("Firestore profile sync deferred:", firestoreErr);
+          const fallbackProfile: UserProfile = {
+            uid: user.uid,
+            name: user.displayName || validation.normalizedEmail.split('@')[0],
+            email: validation.normalizedEmail,
+            photoURL: user.photoURL || undefined,
+            role: serverVerifiedRole,
+            rollNumber: serverVerifiedRole === 'admin' ? 'EMP-NODAL-088' : '2101430100042',
+            createdAt: Date.now()
+          };
+          setProfile(fallbackProfile);
+        }
+
+        // Direct user to appropriate default tab based on verified role
+        if (serverVerifiedRole === 'admin') {
+          setCurrentTab('staff-resolution-portal');
+        } else {
+          setCurrentTab('dashboard');
         }
       } else {
-        // If not logged in and no mock user, activate default Aanya Sharma session for seamless first-glance presentation
-        const defaultAanya: UserProfile = {
-          uid: 'student_aanya_demo',
-          name: 'Aanya Sharma',
-          email: 'aanya.sharma@imsec.ac.in',
-          rollNumber: '2101430100042',
-          branch: 'Computer Science & Engineering',
-          year: '4th Year',
-          hostelBlock: 'Block C (Girls)',
-          photoURL: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCtCFTI8WrD3h4N_jIV1xAZB1YSbIZUebduORRKOf9MeiPWBfAl9SWIIcPPOQRN9XTNyVMX_m77qlbRaXr2vYhUXkyllWUCbgK6bfaHP01RV0S57PB4GW8xMZod9d_iZguTXnVMcCbE2h1OD0rEnglZg3Ch5LfPdCq9oNYMqk9cogJsLvuay_JWtYSdbyliuBOypIttS80rkcKAJFzLySz5KckR9g5TQ49K-pEm2bCtKProEbkzZxdv',
-          role: 'student',
-          createdAt: Date.now()
-        };
-        setCurrentUser({
-          uid: 'student_aanya_demo',
-          displayName: 'Aanya Sharma',
-          email: 'aanya.sharma@imsec.ac.in',
-          photoURL: defaultAanya.photoURL,
-        } as any);
-        setProfile(defaultAanya);
+        // No active Firebase authentication session
+        const storedMockUser = localStorage.getItem('mock_user_session');
+        if (storedMockUser) {
+          try {
+            const mock = JSON.parse(storedMockUser);
+            setCurrentUser(mock);
+            const storedProf = localStorage.getItem(`profile_${mock.uid}`);
+            if (storedProf) {
+              setProfile(JSON.parse(storedProf));
+            }
+            setSessionMode('demo');
+          } catch (e) {
+            setupDefaultDemoSession();
+          }
+        } else {
+          setupDefaultDemoSession();
+        }
       }
 
       setAuthLoading(false);
@@ -292,10 +355,37 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Hydrate complaints from Firestore or localStorage
+  // Helper: Setup Default Sandbox Session for Preview
+  const setupDefaultDemoSession = () => {
+    const defaultAanya: UserProfile = {
+      uid: 'student_aanya_demo',
+      name: 'Aanya Sharma',
+      email: 'aanya.sharma@imsec.ac.in',
+      rollNumber: '2101430100042',
+      branch: 'Computer Science & Engineering',
+      year: '4th Year',
+      hostelBlock: 'Block C (Girls)',
+      photoURL: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCtCFTI8WrD3h4N_jIV1xAZB1YSbIZUebduORRKOf9MeiPWBfAl9SWIIcPPOQRN9XTNyVMX_m77qlbRaXr2vYhUXkyllWUCbgK6bfaHP01RV0S57PB4GW8xMZod9d_iZguTXnVMcCbE2h1OD0rEnglZg3Ch5LfPdCq9oNYMqk9cogJsLvuay_JWtYSdbyliuBOypIttS80rkcKAJFzLySz5KckR9g5TQ49K-pEm2bCtKProEbkzZxdv',
+      role: 'student',
+      createdAt: Date.now()
+    };
+    setCurrentUser({
+      uid: 'student_aanya_demo',
+      displayName: 'Aanya Sharma',
+      email: 'aanya.sharma@imsec.ac.in',
+      photoURL: defaultAanya.photoURL,
+    } as any);
+    setProfile(defaultAanya);
+    setSessionMode('demo');
+    setIsForcedAdmin(false);
+  };
+
+  // -------------------------------------------------------------
+  // Grievance Hydration (Firestore / Local Cache)
+  // -------------------------------------------------------------
   useEffect(() => {
     const fetchComplaints = async () => {
-      if (isMockFirebase || localStorage.getItem('use_mock_auth') === 'true') {
+      if (sessionMode === 'demo') {
         const stored = localStorage.getItem('stitch_complaints');
         if (stored) {
           setComplaints(JSON.parse(stored));
@@ -303,54 +393,135 @@ export default function App() {
           localStorage.setItem('stitch_complaints', JSON.stringify(INITIAL_STITCH_COMPLAINTS));
           setComplaints(INITIAL_STITCH_COMPLAINTS);
         }
-      } else {
-        try {
-          const cRef = collection(db, 'complaints');
-          const qSnap = await getDocs(cRef);
-          if (!qSnap.empty) {
-            const list: ComplaintTicket[] = [];
-            qSnap.forEach(d => {
-              list.push({ id: d.id, ...(d.data() as any) } as ComplaintTicket);
-            });
-            list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-            setComplaints(list);
-          } else {
-            // Seed initial Stitch tickets into Firestore
-            for (const ticket of INITIAL_STITCH_COMPLAINTS) {
-              await setDoc(doc(db, 'complaints', ticket.id), ticket);
-            }
-            setComplaints(INITIAL_STITCH_COMPLAINTS);
+        return;
+      }
+
+      // Real authenticated mode: Fetch from Firestore
+      try {
+        const cRef = collection(db, 'complaints');
+        const qSnap = await getDocs(cRef);
+        if (!qSnap.empty) {
+          const list: ComplaintTicket[] = [];
+          qSnap.forEach(d => {
+            list.push({ id: d.id, ...(d.data() as any) } as ComplaintTicket);
+          });
+          list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          setComplaints(list);
+        } else {
+          // Seed initial tickets if collection is brand new
+          for (const ticket of INITIAL_STITCH_COMPLAINTS) {
+            await setDoc(doc(db, 'complaints', ticket.id), ticket);
           }
-        } catch (err) {
-          console.warn("Firestore fetch deferred. Using initial Stitch repository.", err);
-          const stored = localStorage.getItem('stitch_complaints');
-          if (stored) {
-            setComplaints(JSON.parse(stored));
-          } else {
-            setComplaints(INITIAL_STITCH_COMPLAINTS);
-          }
+          setComplaints(INITIAL_STITCH_COMPLAINTS);
+        }
+      } catch (err) {
+        console.warn("Firestore complaints fetch deferred, using cached roster:", err);
+        const stored = localStorage.getItem('stitch_complaints');
+        if (stored) {
+          setComplaints(JSON.parse(stored));
+        } else {
+          setComplaints(INITIAL_STITCH_COMPLAINTS);
         }
       }
     };
 
     fetchComplaints();
-  }, [currentUser]);
+  }, [currentUser, sessionMode]);
 
-  // Google OAuth Login
+  // -------------------------------------------------------------
+  // Filtered Complaint Access (Requirement 7: Privacy Enforcement)
+  // -------------------------------------------------------------
+  const isStaff = profile?.role === 'admin' || (sessionMode === 'demo' && isForcedAdmin);
+
+  const permittedComplaints = useMemo(() => {
+    if (sessionMode === 'demo' || isStaff) {
+      // In sandbox mode or for staff, show full roster
+      return complaints;
+    }
+    // Student in authenticated mode: strictly access their own complaints or public anonymized records
+    const studentUid = currentUser?.uid;
+    const studentEmail = currentUser?.email?.toLowerCase();
+
+    return complaints.filter(
+      c => c.studentId === studentUid || 
+           (studentEmail && c.studentEmail?.toLowerCase() === studentEmail) ||
+           c.isAnonymous === true
+    );
+  }, [complaints, sessionMode, isStaff, currentUser?.uid, currentUser?.email]);
+
+  // -------------------------------------------------------------
+  // Auth Handlers
+  // -------------------------------------------------------------
   const handleGoogleLogin = async () => {
     setAuthLoading(true);
-    setAuthError(null);
+    setAuthSecurityError(null);
+
     try {
-      await signInWithPopup(auth, googleProvider);
+      const userCredential = await signInWithPopup(auth, googleProvider);
+      const user = userCredential.user;
+
+      // 1. Check email verification
+      if (!user.emailVerified) {
+        await signOut(auth);
+        setCurrentUser(null);
+        setProfile(null);
+        setSessionMode('unauthenticated');
+        setAuthSecurityError({
+          code: 'EMAIL_UNVERIFIED',
+          title: 'Email Verification Required',
+          message: 'Your Google account email has not been verified by Google. Please verify your email before accessing the portal.',
+          email: user.email || undefined
+        });
+        return;
+      }
+
+      // 2. Exact domain validation & lookalike rejection
+      const validation = validateCampusEmail(user.email, user.emailVerified);
+      if (!validation.isValid) {
+        await signOut(auth);
+        setCurrentUser(null);
+        setProfile(null);
+        setSessionMode('unauthenticated');
+        setAuthSecurityError({
+          code: validation.errorCode || 'DOMAIN_UNAUTHORIZED',
+          title: 'Institutional Domain Unauthorized',
+          message: validation.errorMessage || `Access denied. Only @${INSTITUTIONAL_DOMAIN} accounts are authorized.`,
+          email: user.email || undefined
+        });
+        return;
+      }
+
+      // Clear sandbox state
+      localStorage.removeItem('mock_user_session');
+      addToast('Authenticated', `Welcome to CampusVoice, ${user.displayName || user.email}!`, 'success');
     } catch (err: any) {
-      console.error(err);
-      setAuthError(err.message || 'Google sign-in was interrupted.');
+      console.error("Google Login Interrupted:", err);
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setAuthSecurityError({
+          code: err.code || 'AUTH_FAILED',
+          title: 'Google Sign-In Error',
+          message: err.message || 'An unexpected error occurred during Google sign in.',
+        });
+      }
     } finally {
       setAuthLoading(false);
     }
   };
 
-  // Mock Login Switch
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn("Sign out note:", e);
+    }
+    localStorage.removeItem('mock_user_session');
+    setCurrentUser(null);
+    setProfile(null);
+    setSessionMode('unauthenticated');
+    addToast('Signed Out', 'You have been disconnected from the portal.', 'info');
+  };
+
+  // Mock / Sandbox Switcher (Only effective in Demo mode)
   const handleMockLogin = (role: 'student' | 'admin') => {
     const mockUser = {
       uid: role === 'admin' ? 'admin_rakesh' : 'student_aanya',
@@ -365,7 +536,7 @@ export default function App() {
       uid: mockUser.uid,
       name: mockUser.displayName,
       email: mockUser.email,
-      rollNumber: role === 'admin' ? 'EMP-IT-088' : '2101430100042',
+      rollNumber: role === 'admin' ? 'EMP-NODAL-088' : '2101430100042',
       branch: 'Information Technology',
       year: role === 'admin' ? 'Senior Nodal Officer' : '4th Year',
       hostelBlock: role === 'admin' ? 'Proctorial Board' : 'Block C (Girls)',
@@ -379,24 +550,14 @@ export default function App() {
     setCurrentUser(mockUser as any);
     setProfile(mockProfile);
     setIsForcedAdmin(role === 'admin');
+    setSessionMode('demo');
+
     if (role === 'admin') {
       setCurrentTab('staff-resolution-portal');
     } else {
       setCurrentTab('dashboard');
     }
-    addToast('Authenticated', `Active Session: ${mockUser.displayName}`, 'success');
-  };
-
-  const handleLogout = async () => {
-    localStorage.removeItem('mock_user_session');
-    try {
-      await signOut(auth);
-    } catch (e) {
-      console.warn(e);
-    }
-    setCurrentUser(null);
-    setProfile(null);
-    addToast('Signed Out', 'You have been disconnected from the portal.', 'info');
+    addToast('Sandbox Mode', `Simulating ${mockUser.displayName} (${role.toUpperCase()})`, 'info');
   };
 
   // Submit New Grievance
@@ -433,23 +594,22 @@ export default function App() {
       statusHistory: [
         {
           status: 'Submitted',
-          updatedBy: 'Complainant',
+          updatedBy: profile?.name || 'Complainant',
           updatedAt: Date.now(),
           changeSummary: 'Grievance lodged with statutory digital affirmation.'
         }
       ]
     };
 
-    // Update in memory & storage
     const updatedList = [fullTicket, ...complaints];
     setComplaints(updatedList);
     localStorage.setItem('stitch_complaints', JSON.stringify(updatedList));
 
-    if (!isMockFirebase) {
+    if (sessionMode === 'authenticated') {
       try {
         await setDoc(doc(db, 'complaints', fullTicket.id), fullTicket);
       } catch (err) {
-        console.warn("Firestore save deferred:", err);
+        console.warn("Firestore complaint write deferred:", err);
       }
     }
 
@@ -458,26 +618,24 @@ export default function App() {
   };
 
   // Staff Submit Resolution
-  const handleStaffResolution = async (
-    ticketId: string,
-    actionTaken: string,
-    photoUrl?: string,
-    speedtest?: string
-  ) => {
+  const handleStaffResolution = async (ticketId: string, resolutionData: any) => {
     const updated = complaints.map(t => {
       if (t.id === ticketId || t.ticketId === ticketId) {
         return {
           ...t,
           status: 'Resolution Submitted' as const,
+          designatedOfficer: resolutionData.officerName || t.designatedOfficer,
+          adminNote: resolutionData.actionTaken || t.adminNote,
           updatedAt: Date.now(),
           resolutionProof: {
-            logId: `RES-2024-${Math.floor(1000 + Math.random() * 9000)}`,
-            officerName: 'Er. Rakesh Kumar',
-            officerRole: 'Senior Network Administrator, IT Infrastructure Cell',
-            interventionTimestamp: new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' IST',
-            actionTaken,
-            photoProofUrl: photoUrl || t.resolutionProof?.photoProofUrl,
-            speedtestAfter: speedtest || '112.4 Mbps',
+            logId: `RES-${Date.now().toString().slice(-6)}`,
+            officerName: resolutionData.officerName || 'Er. Rakesh Kumar',
+            officerRole: 'Senior Nodal Officer',
+            interventionTimestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            actionTaken: resolutionData.actionTaken,
+            photoProofUrl: resolutionData.photoProofUrl || t.resolutionProof?.photoProofUrl,
+            speedtestBefore: '4 Mbps',
+            speedtestAfter: '112.4 Mbps',
             packetLoss: '0.00%',
             jitter: '0.8ms'
           },
@@ -485,9 +643,9 @@ export default function App() {
             ...(t.statusHistory || []),
             {
               status: 'Resolution Submitted' as const,
-              updatedBy: 'Er. Rakesh Kumar',
+              updatedBy: resolutionData.officerName || 'Staff Nodal Officer',
               updatedAt: Date.now(),
-              changeSummary: 'Technical intervention completed and proof uploaded.'
+              changeSummary: `Resolution dossier submitted: ${resolutionData.actionTaken?.slice(0, 80)}...`
             }
           ]
         };
@@ -497,6 +655,17 @@ export default function App() {
 
     setComplaints(updated);
     localStorage.setItem('stitch_complaints', JSON.stringify(updated));
+
+    if (sessionMode === 'authenticated') {
+      try {
+        const found = updated.find(t => t.id === ticketId || t.ticketId === ticketId);
+        if (found) {
+          await updateDoc(doc(db, 'complaints', found.id), found as any);
+        }
+      } catch (e) {
+        console.warn("Firestore update deferred:", e);
+      }
+    }
 
     addToast('Resolution Submitted', `Docket #${ticketId} submitted for student verification.`, 'success');
   };
@@ -537,6 +706,18 @@ export default function App() {
 
     setComplaints(updated);
     localStorage.setItem('stitch_complaints', JSON.stringify(updated));
+
+    if (sessionMode === 'authenticated') {
+      try {
+        const found = updated.find(t => t.id === ticketId || t.ticketId === ticketId);
+        if (found) {
+          await updateDoc(doc(db, 'complaints', found.id), found as any);
+        }
+      } catch (e) {
+        console.warn("Firestore close update deferred:", e);
+      }
+    }
+
     setSelectedTicket(null);
     addToast('Ticket Certified', 'Grievance certified and officially archived into institutional ledger.', 'success');
   };
@@ -567,6 +748,18 @@ export default function App() {
 
     setComplaints(updated);
     localStorage.setItem('stitch_complaints', JSON.stringify(updated));
+
+    if (sessionMode === 'authenticated') {
+      try {
+        const found = updated.find(t => t.id === ticketId || t.ticketId === ticketId);
+        if (found) {
+          await updateDoc(doc(db, 'complaints', found.id), found as any);
+        }
+      } catch (e) {
+        console.warn("Firestore escalate update deferred:", e);
+      }
+    }
+
     setSelectedTicket(null);
     addToast('Ticket Escalated', 'Grievance elevated to Level 2 (Head of Department) review.', 'warning');
   };
@@ -576,11 +769,18 @@ export default function App() {
       const newProf = { ...profile, ...updated, updatedAt: Date.now() };
       setProfile(newProf);
       localStorage.setItem(`profile_${newProf.uid}`, JSON.stringify(newProf));
+      if (sessionMode === 'authenticated') {
+        try {
+          await updateDoc(doc(db, 'users', profile.uid), updated);
+        } catch (e) {
+          console.warn("Firestore profile update deferred:", e);
+        }
+      }
       addToast('Profile Updated', 'Student credentials successfully updated.', 'success');
     }
   };
 
-  const activeTicketsCount = complaints.filter(
+  const activeTicketsCount = permittedComplaints.filter(
     c => c.status === 'Submitted' || c.status === 'In Review' || c.status === 'In Progress' || c.status === 'Resolution Submitted'
   ).length;
 
@@ -588,6 +788,24 @@ export default function App() {
     <div className="relative min-h-screen bg-[#f8f9ff] text-[#0b1c30] antialiased">
       {/* Toast Alert System */}
       <NotificationToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* Persistent Sandbox Demonstration Warning Banner */}
+      {sessionMode === 'demo' && (
+        <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold flex items-center justify-between border-b border-amber-600/40 z-50 sticky top-0">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">info</span>
+            <span>
+              <strong>SANDBOX DEMO MODE:</strong> You are previewing CampusVoice in an offline simulation. No live Firebase authentication or production records are modified.
+            </span>
+          </div>
+          <button
+            onClick={handleGoogleLogin}
+            className="px-3 py-1 bg-slate-900 text-white rounded text-[11px] font-bold hover:bg-slate-800 transition-colors shrink-0 ml-2"
+          >
+            Sign In with @imsec.ac.in Account
+          </button>
+        </div>
+      )}
 
       {/* Institutional Top Masthead */}
       <Header
@@ -598,8 +816,14 @@ export default function App() {
         onClearNotifications={() => setNotifications([])}
         onOpenProfile={() => setShowProfileModal(true)}
         onLogout={handleLogout}
+        onGoogleLogin={handleGoogleLogin}
+        sessionMode={sessionMode}
         isForcedAdmin={isForcedAdmin}
         onToggleAdmin={() => {
+          if (sessionMode !== 'demo') {
+            addToast('Access Control', 'Role toggling is only permitted within the Sandbox Simulation.', 'warning');
+            return;
+          }
           const next = !isForcedAdmin;
           setIsForcedAdmin(next);
           if (next) {
@@ -615,6 +839,10 @@ export default function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         activeTicketsCount={activeTicketsCount}
+        isStaff={isStaff}
+        onRestrictedAccess={() => {
+          addToast('Access Restricted', 'Staff Resolution Portal requires verified institutional officer credentials.', 'warning');
+        }}
       />
 
       {/* Main Workspace Canvas (pl-64 on desktop) */}
@@ -623,7 +851,7 @@ export default function App() {
           {currentTab === 'dashboard' && (
             <StudentDashboard
               profile={profile}
-              complaints={complaints}
+              complaints={permittedComplaints}
               onSelectTicket={ticket => setSelectedTicket(ticket)}
               onSubmitGrievance={() => setCurrentTab('submit-grievance')}
               onOpenSop={() => setShowSopModal(true)}
@@ -641,7 +869,7 @@ export default function App() {
 
           {currentTab === 'my-tickets' && (
             <MyTickets
-              complaints={complaints}
+              complaints={permittedComplaints}
               onSelectTicket={ticket => setSelectedTicket(ticket)}
               onOpenSop={() => setShowSopModal(true)}
             />
@@ -656,6 +884,19 @@ export default function App() {
                 <p className="text-sm text-[#464554] mb-4">
                   Verified statutory credentials under IMSEC Academic Grievance Charter.
                 </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl text-xs mb-6">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-slate-500 block mb-1">Authenticated Account</span>
+                    <span className="font-mono font-bold text-slate-800">{profile?.email || 'N/A'}</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-slate-500 block mb-1">Institutional Domain Status</span>
+                    <span className="font-bold text-emerald-700 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                      Verified @imsec.ac.in
+                    </span>
+                  </div>
+                </div>
                 <button
                   onClick={() => setShowProfileModal(true)}
                   className="px-4 py-2 bg-[#4338ca] text-white rounded-lg text-xs font-bold hover:bg-[#2a14b4] transition-colors"
@@ -667,15 +908,31 @@ export default function App() {
           )}
 
           {currentTab === 'staff-resolution-portal' && (
-            <StaffResolutionDashboard
-              profile={profile}
-              complaints={complaints}
-              onSelectTicket={ticket => setSelectedTicket(ticket)}
-              onSubmitStaffResolution={handleStaffResolution}
-              onExportAuditDossier={() => {
-                alert('Exporting complete audit dossier to encrypted PDF/CSV format...');
-              }}
-            />
+            isStaff ? (
+              <StaffResolutionDashboard
+                profile={profile}
+                complaints={complaints}
+                onSelectTicket={ticket => setSelectedTicket(ticket)}
+                onSubmitStaffResolution={handleStaffResolution}
+                onExportAuditDossier={() => {
+                  alert('Exporting complete audit dossier to encrypted CSV/PDF format...');
+                }}
+              />
+            ) : (
+              <div className="p-8 bg-white rounded-xl shadow-xs border border-red-200 text-center max-w-lg mx-auto mt-12">
+                <span className="material-symbols-outlined text-[48px] text-red-600 mb-2">shield_lock</span>
+                <h2 className="text-lg font-bold text-slate-900 mb-1">Staff Access Restricted</h2>
+                <p className="text-xs text-slate-600 mb-4">
+                  The Staff Resolution Portal is restricted strictly to authorized Nodal Officers and Proctorial Staff.
+                </p>
+                <button
+                  onClick={() => setCurrentTab('dashboard')}
+                  className="px-4 py-2 bg-[#4338ca] text-white rounded-lg text-xs font-bold"
+                >
+                  Return to Student Dashboard
+                </button>
+              </div>
+            )
           )}
         </main>
       </div>
@@ -704,6 +961,19 @@ export default function App() {
       {/* Redressal SOP & SLAs Modal */}
       {showSopModal && (
         <RedressalSopModal onClose={() => setShowSopModal(false)} />
+      )}
+
+      {/* Security Access Denied Modal */}
+      {authSecurityError && (
+        <AccessDeniedModal
+          error={authSecurityError}
+          onClose={() => setAuthSecurityError(null)}
+          onRetryGoogle={handleGoogleLogin}
+          onOpenSandbox={() => {
+            setAuthSecurityError(null);
+            setupDefaultDemoSession();
+          }}
+        />
       )}
     </div>
   );

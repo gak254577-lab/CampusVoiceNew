@@ -6,12 +6,16 @@ interface SidebarProps {
   currentTab: NavTab;
   setCurrentTab: (tab: NavTab) => void;
   activeTicketsCount?: number;
+  isStaff?: boolean;
+  onRestrictedAccess?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   setCurrentTab,
   activeTicketsCount = 2,
+  isStaff = false,
+  onRestrictedAccess,
 }) => {
   return (
     <aside className="fixed left-0 top-16 bottom-0 w-64 bg-white z-30 border-r border-[#c7c4d7]/50 flex flex-col justify-between py-4 select-none">
@@ -112,7 +116,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <button
-          onClick={() => setCurrentTab('staff-resolution-portal')}
+          onClick={() => {
+            if (isStaff) {
+              setCurrentTab('staff-resolution-portal');
+            } else if (onRestrictedAccess) {
+              onRestrictedAccess();
+            } else {
+              alert('Access Restricted: Staff Resolution Portal requires authorized institutional credentials.');
+            }
+          }}
           className={`w-full flex flex-col gap-1 px-3.5 py-2.5 rounded-lg transition-colors border text-left ${
             currentTab === 'staff-resolution-portal'
               ? 'bg-[#4338ca] text-white border-[#4338ca] shadow-xs'
@@ -132,17 +144,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 currentTab === 'staff-resolution-portal' ? 'text-white' : 'text-[#2a14b4]'
               }`}
             >
-              lock
+              {isStaff ? 'admin_panel_settings' : 'lock'}
             </span>
           </div>
           <span
             className={`text-[10px] px-1.5 py-0.5 rounded inline-block w-fit font-bold border ${
               currentTab === 'staff-resolution-portal'
                 ? 'bg-white/20 text-white border-white/30'
-                : 'text-[#005c54] bg-[#005c54]/10 border-[#005c54]/20'
+                : isStaff
+                ? 'text-[#005c54] bg-[#005c54]/10 border-[#005c54]/20'
+                : 'text-amber-800 bg-amber-50 border-amber-200'
             }`}
           >
-            Authorized Staff Only
+            {isStaff ? 'Authorized Nodal Officer' : 'Requires Staff Role'}
           </span>
         </button>
 

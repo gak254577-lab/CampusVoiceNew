@@ -29,6 +29,8 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
 
   const isResolved = ticket.status === 'Resolved';
   const isVerificationRequired = ticket.status === 'Resolution Submitted';
+  const isStaff = profile?.role === 'admin';
+  const isComplainant = !profile?.uid || profile?.uid === ticket.studentId || profile?.email?.toLowerCase() === ticket.studentEmail?.toLowerCase();
 
   const handleCertify = async () => {
     if (!concurrence) {
@@ -464,6 +466,19 @@ export const TicketDetailsModal: React.FC<TicketDetailsModalProps> = ({
                   </div>
                 )}
               </section>
+
+              {/* Protected Staff Notes (Visible Strictly to Authorized Officers) */}
+              {isStaff && ticket.adminNote && (
+                <section className="bg-[#eff4ff] rounded-xl shadow-xs border border-[#4338ca]/30 p-5 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-[#2a14b4] font-bold text-xs uppercase tracking-wider">
+                    <span className="material-symbols-outlined text-[18px]">lock</span>
+                    <span>Confidential Staff Notes (Protected from Complainant)</span>
+                  </div>
+                  <p className="text-xs text-[#0b1c30] font-mono bg-white p-3 rounded-lg border border-[#c7c4d7]/40 leading-relaxed">
+                    {ticket.adminNote}
+                  </p>
+                </section>
+              )}
             </div>
 
             {/* Right Column (4 cols): Chronology & Audit Chain */}
